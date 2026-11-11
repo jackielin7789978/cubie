@@ -26,6 +26,7 @@ export function generateScramble(
   rng: () => number = Math.random,
 ): Move[] {
   const layers = scrambleLayers(size);
+  if (layers.length === 0 && length > 0) throw new Error(`${size}×${size} 沒有可以打亂的層`);
   const moves: Move[] = [];
   while (moves.length < length) {
     const move: Move = { axis: pick(AXES, rng), layer: pick(layers, rng), dir: rng() < 0.5 ? 1 : -1 };

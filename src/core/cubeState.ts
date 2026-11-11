@@ -16,20 +16,30 @@ export function rotateVec(v: Vec3, axis: Axis, dir: 1 | -1): Vec3 {
   return [-dir * y + 0, dir * x + 0, z];
 }
 
+/** 把長度 3 的陣列轉成 Vec3（只是讓型別正確） */
+function toVec3(values: readonly number[]): Vec3 {
+  return [values[0], values[1], values[2]];
+}
+
+/**
+ * 產生某一面的 N×N 張貼紙。
+ * 法向量所在的軸固定在表面座標（±(N-1)/2），另外兩軸各自走過所有層。
+ */
 function faceStickers(size: number, color: FaceColor): Sticker[] {
   const normal = FACE_NORMALS[color];
-  const fixed = normal.findIndex((n) => n !== 0);
-  const offset = (size - 1) / 2;
+  const fixedAxis = normal.findIndex((n) => n !== 0);
+  const [firstAxis, secondAxis] = [0, 1, 2].filter((axis) => axis !== fixedAxis);
+  const surface = (normal[fixedAxis] * (size - 1)) / 2;
   const coords = layerCoords(size);
-  const stickers: Sticker[] = [];
-  for (const a of coords) {
-    for (const b of coords) {
-      const position = [a, b, 0];
-      position.splice(fixed, 0, normal[fixed] * offset);
-      stickers.push({ position: [position[0], position[1], position[2]], normal, color });
-    }
-  }
-  return stickers;
+  return coords.flatMap((first) =>
+    coords.map((second) => {
+      const position = [0, 0, 0];
+      position[fixedAxis] = surface;
+      position[firstAxis] = first;
+      position[secondAxis] = second;
+      return { position: toVec3(position), normal, color };
+    }),
+  );
 }
 
 /** 建立完成狀態的 N×N 方塊 */
