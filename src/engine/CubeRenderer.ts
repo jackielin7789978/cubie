@@ -26,13 +26,14 @@ export class CubeRenderer {
   readonly ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
   readonly cameraRig = new CameraRig(this.keyLight);
   readonly model: CubeModel;
-  private readonly environment: THREE.Texture;
+  private environment: THREE.Texture;
   private readonly resizeObserver: ResizeObserver;
   private readonly raycaster = new THREE.Raycaster();
   private postProcess: PostProcess | null = null;
   private pixelRatioCap = MAX_PIXEL_RATIO;
   private frameId: number | null = null;
   private frameHandler: FrameHandler | null = null;
+  private contextRestoredHandler: (() => void) | null = null;
   private width = 0;
   private height = 0;
 
@@ -54,6 +55,8 @@ export class CubeRenderer {
 
     this.resizeObserver = new ResizeObserver(() => this.syncSize());
     this.resizeObserver.observe(container);
+    this.canvas.addEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.syncSize();
   }
 
@@ -67,6 +70,11 @@ export class CubeRenderer {
 
   setFrameHandler(handler: FrameHandler): void {
     this.frameHandler = handler;
+  }
+
+  /** WebGL context 還原後要額外做的事（例如 ThemeApplier 重建 bloom） */
+  setContextRestoredHandler(handler: () => void): void {
+    this.contextRestoredHandler = handler;
   }
 
   /** 排一幀來畫。同一幀內呼叫多次只會畫一次；沒人呼叫時不會跑 loop。 */
@@ -121,6 +129,9 @@ export class CubeRenderer {
     this.frameId = null;
     this.frameHandler = null;
     this.resizeObserver.disconnect();
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    this.contextRestoredHandler = null;
     this.postProcess?.dispose();
     this.postProcess = null;
     this.model.dispose();
@@ -130,6 +141,30 @@ export class CubeRenderer {
     this.renderer.forceContextLoss();
     this.canvas.remove();
   }
+
+  /**
+   * WebGL context 遺失（例如 iOS Safari 把分頁放到背景）：preventDefault 告訴瀏覽器「之後要還原」，
+   * 不然 context 就永遠不會回來。
+   */
+  private onContextLost = (event: Event): void => {
+    event.preventDefault();
+    if (this.frameId !== null) cancelAnimationFrame(this.frameId);
+    this.frameId = null;
+  };
+
+  /**
+   * context 還原：three.js 自己的監聽器（比我們早註冊，所以先執行）已經重設 GL 狀態，
+   * 幾何和一般貼圖會在下次畫的時候重新上傳；但環境貼圖是「畫出來的」render target，
+   * 內容不會自己回來（材質會變暗），所以要重新產生；bloom 的 render target 重新設定大小，再重畫。
+   */
+  private onContextRestored = (): void => {
+    // 舊的環境貼圖屬於已經遺失的 context，不去 dispose（WebKit 會報錯），直接換掉讓 GC 回收
+    this.environment = this.createEnvironment();
+    this.scene.environment = this.environment;
+    this.contextRestoredHandler?.();
+    this.applySize();
+    this.requestRender();
+  };
 
   private frame = (now: number): void => {
     this.frameId = null;

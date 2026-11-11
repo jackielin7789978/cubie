@@ -67,6 +67,15 @@ export class ThemeApplier {
     this.renderer.requestRender();
   }
 
+  /**
+   * WebGL context 還原後：材質標成需要重新編譯，bloom 重新設定一次大小（render target 會在下次畫的時候重建）。
+   * 不重建 bloom 物件：舊的 GL 物件屬於已經遺失的 context，去 dispose 它們 WebKit 會報 INVALID_OPERATION。
+   */
+  handleContextRestored(): void {
+    if (this.theme) this.applyMaterials(this.theme);
+    this.renderer.requestRender();
+  }
+
   /** 每一幀（只在連續動畫期間）回報這幀花了多久；太慢就自動降級 */
   reportFrameTime(deltaMs: number): void {
     if (!this.bloomActive) return;

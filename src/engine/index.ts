@@ -39,6 +39,7 @@ class Engine implements CubeEngine, CubeEngineDebug {
     this.themes = new ThemeApplier(this.renderer, options.container);
     this.themes.apply(options.theme);
     this.renderer.setFrameHandler(this.onFrame);
+    this.renderer.setContextRestoredHandler(() => this.themes.handleContextRestored());
     this.input = new InputController({
       canvas: this.renderer.canvas,
       keyboard: options.keyboard ?? false,
