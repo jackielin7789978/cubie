@@ -5,9 +5,12 @@ import type { GameController } from '../hooks/gameController';
 import { useGameStore } from '../store/useGameStore';
 import { THEMES } from '../themes';
 
-/** 網址帶 ?mockEngine 時改用開發用的假 engine（動態載入，正式版不會打包進來） */
+/**
+ * 開發模式下網址帶 ?mockEngine 時改用開發用的假 engine。
+ * import.meta.env.DEV 在正式版建置時會被換成 false，整段（連同動態 import）被移除，不會打包 mock。
+ */
 async function loadEngineFactory(): Promise<CreateCubeEngine> {
-  if (!new URLSearchParams(window.location.search).has('mockEngine')) return createCubeEngine;
+  if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('mockEngine')) return createCubeEngine;
   const { createMockEngine } = await import('./__dev__/mockEngine');
   return createMockEngine;
 }
@@ -18,6 +21,7 @@ export function CubeCanvas({ controller }: { controller: GameController }) {
   // ref 的值改變不會讓畫面重畫，適合存這種「React 以外」的東西。
   const containerRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  const size = useGameStore((s) => s.size);
 
   // 這個 effect 只在元件第一次出現時執行（依賴陣列是空的）。
   // 開發模式的 React StrictMode 會故意「掛上 → 卸載 → 再掛上」一次來抓錯，
@@ -52,7 +56,13 @@ export function CubeCanvas({ controller }: { controller: GameController }) {
 
   return (
     <div className="stage">
-      <div ref={containerRef} className="cube-canvas" data-testid="cube-canvas" />
+      <div
+        ref={containerRef}
+        className="cube-canvas"
+        data-testid="cube-canvas"
+        role="img"
+        aria-label={`${size}×${size} 魔術方塊，拖曳方塊轉動一層，拖曳空白處旋轉視角`}
+      />
       {failed && <p className="stage-error">這個瀏覽器無法顯示 3D 方塊</p>}
     </div>
   );

@@ -36,7 +36,8 @@ export default function App({ solutionProvider }: AppProps) {
       <StatsPanel />
       <Toolbar controller={controller} />
       <SolvedModal controller={controller} />
-      <span className="visually-hidden" data-testid="game-status">
+      {/* 給自動化測試讀遊戲狀態用，螢幕閱讀器不需要唸出來 */}
+      <span className="visually-hidden" aria-hidden="true" data-testid="game-status">
         {status}
       </span>
     </main>
