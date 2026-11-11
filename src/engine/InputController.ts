@@ -54,6 +54,8 @@ export class InputController {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
+    // 不能轉層時先收起手掌游標，下次滑鼠移動會重新判斷
+    if (!enabled && !this.drag) this.setCursor('default');
   }
 
   dispose(): void {
@@ -82,6 +84,7 @@ export class InputController {
       mode: hit ? 'layer' : 'orbit',
       hit,
     };
+    this.setCursor(hit ? 'grabbing' : 'move');
     // 指標拖出 canvas 外也能繼續收到事件；模擬的事件可能沒有真正的 pointer，失敗就算了
     try {
       this.target.canvas.setPointerCapture(e.pointerId);
@@ -92,7 +95,8 @@ export class InputController {
 
   private onPointerMove = (e: PointerEvent): void => {
     const drag = this.drag;
-    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (!drag) return this.updateHoverCursor(e);
+    if (e.pointerId !== drag.pointerId) return;
     if (drag.mode === 'orbit') this.target.onOrbit(e.clientX - drag.lastX, e.clientY - drag.lastY);
     else if (drag.mode === 'layer') this.tryLayerMove(drag, e);
     drag.lastX = e.clientX;
@@ -102,12 +106,28 @@ export class InputController {
   private onPointerEnd = (e: PointerEvent): void => {
     if (!this.drag || e.pointerId !== this.drag.pointerId) return;
     this.drag = null;
+    this.updateHoverCursor(e);
     try {
       if (this.target.canvas.hasPointerCapture(e.pointerId)) this.target.canvas.releasePointerCapture(e.pointerId);
     } catch {
       /* 忽略 */
     }
   };
+
+  /**
+   * 滑鼠游標提示：移到可以轉的方塊上變成「手掌」，按住時變成「抓住」；
+   * 空白處維持一般游標，拖曳旋轉視角時變成移動符號。觸控沒有游標，直接略過。
+   */
+  private updateHoverCursor(e: PointerEvent): void {
+    if (e.pointerType !== 'mouse') return;
+    const overCube = this.enabled && this.target.pickFace(e.clientX, e.clientY) !== null;
+    this.setCursor(overCube ? 'grab' : 'default');
+  }
+
+  private setCursor(cursor: 'default' | 'grab' | 'grabbing' | 'move'): void {
+    const { style } = this.target.canvas;
+    if (style.cursor !== cursor) style.cursor = cursor;
+  }
 
   /** 拖曳超過門檻時決定轉哪一層；一次拖曳只觸發一步 */
   private tryLayerMove(drag: ActiveDrag, e: PointerEvent): void {

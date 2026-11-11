@@ -301,3 +301,25 @@ test('一般玩家的網址不開放鍵盤轉動', async ({ page }) => {
   await page.waitForTimeout(400);
   expect(await logicalKey(page)).toBe(before);
 });
+
+test('滑鼠移到方塊上游標變成手掌，按住變成抓住，空白處是一般游標', async ({ page, isMobile }) => {
+  test.skip(isMobile, '觸控裝置沒有游標');
+  await openGame(page);
+  const canvas = page.locator('[data-testid="cube-canvas"] canvas');
+  const cursor = () => canvas.evaluate((c) => (c as HTMLElement).style.cursor);
+  const front = await page.evaluate(() => (window as unknown as { __cubie: CubieDebug }).__cubie.engine.projectToScreen(0, 0, 1.5));
+
+  await page.mouse.move(front.x, front.y);
+  expect(await cursor()).toBe('grab');
+  await page.mouse.down();
+  expect(await cursor()).toBe('grabbing');
+  await page.mouse.up();
+  expect(await cursor()).toBe('grab');
+
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 8, box.y + box.height / 2);
+  expect(await cursor()).toBe('default');
+  await page.mouse.down();
+  expect(await cursor()).toBe('move');
+  await page.mouse.up();
+});
