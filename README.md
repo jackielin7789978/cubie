@@ -63,3 +63,7 @@ push 到 `main` 後，GitHub Actions 會自動部署到 GitHub Pages。
 - `PROGRESS.md`：開發進度、自行決定事項、已知問題
 - `CLAUDE.md`：給 Claude Code 的協作規則
 - `previews/phase0/`：討論配色和版面時做的預覽頁
+
+## 授權
+
+[MIT License](LICENSE)
