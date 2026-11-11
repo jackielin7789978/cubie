@@ -159,6 +159,55 @@ async function touchDrag(page: Page, from: { x: number; y: number }, dx: number,
   );
 }
 
+/** 把打亂序列倒過來、轉成鍵盤按鍵（小寫 = 順時針，Shift+大寫 = 逆時針） */
+async function scrambleSolutionKeys(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    type M = { axis: 'x' | 'y' | 'z'; layer: number; dir: number };
+    const { store } = (window as unknown as { __cubie: { store: { getState(): { scrambleMoves: M[] } } } }).__cubie;
+    const faces = { x: ['R', 'L'], y: ['U', 'D'], z: ['F', 'B'] };
+    return [...store.getState().scrambleMoves].reverse().map((m) => {
+      const face = faces[m.axis][m.layer > 0 ? 0 : 1];
+      // 反向之後的方向是 -m.dir；順時針 = 方向和該層座標的正負號相反
+      const clockwise = -m.dir === -Math.sign(m.layer);
+      return clockwise ? face.toLowerCase() : `Shift+${face}`;
+    });
+  });
+}
+
+/** 兩根手指在方塊上捏合（第一根按在 from，第二根在旁邊，兩根往相反方向移開） */
+async function pinch(page: Page, from: { x: number; y: number }): Promise<void> {
+  await page.evaluate(
+    ([x, y]) => {
+      const canvas = document.querySelector('[data-testid="cube-canvas"] canvas')!;
+      const fire = (type: string, id: number, primary: boolean, cx: number, cy: number) =>
+        canvas.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: id,
+            pointerType: 'touch',
+            isPrimary: primary,
+            bubbles: true,
+            cancelable: true,
+            clientX: cx,
+            clientY: cy,
+            button: 0,
+            buttons: type === 'pointerup' ? 0 : 1,
+          }),
+        );
+      fire('pointerdown', 21, true, x, y);
+      fire('pointerdown', 22, false, x + 30, y + 30);
+      for (let i = 1; i <= 8; i++) {
+        fire('pointermove', 21, true, x - i * 10, y - i * 10);
+        fire('pointermove', 22, false, x + 30 + i * 10, y + 30 + i * 10);
+      }
+      fire('pointerup', 22, false, x + 110, y + 110);
+      // 第二根先放開後，第一根繼續移動也不能轉層
+      for (let i = 1; i <= 4; i++) fire('pointermove', 21, true, x - 80, y - 80 - i * 20);
+      fire('pointerup', 21, true, x - 80, y - 160);
+    },
+    [from.x, from.y],
+  );
+}
+
 test('打開頁面：方塊顯示、沒有 console error', async ({ page }) => {
   const errors = await openGame(page);
   await expect(page.getByText('Cubie').first()).toBeVisible();
@@ -215,17 +264,7 @@ test('玩家自己用鍵盤解完：跳出完成畫面並記錄最佳成績', as
   await openGame(page);
   await startGame(page);
   // 「上一步」不能撤銷打亂，所以這裡把打亂序列倒過來，用鍵盤一步一步轉回去
-  const keys = await page.evaluate(() => {
-    type M = { axis: 'x' | 'y' | 'z'; layer: number; dir: number };
-    const { store } = (window as unknown as { __cubie: { store: { getState(): { scrambleMoves: M[] } } } }).__cubie;
-    const faces = { x: ['R', 'L'], y: ['U', 'D'], z: ['F', 'B'] };
-    return [...store.getState().scrambleMoves].reverse().map((m) => {
-      const face = faces[m.axis][m.layer > 0 ? 0 : 1];
-      // 反向之後的方向是 -m.dir；順時針 = 方向和該層座標的正負號相反
-      const clockwise = -m.dir === -Math.sign(m.layer);
-      return clockwise ? face.toLowerCase() : `Shift+${face}`;
-    });
-  });
+  const keys = await scrambleSolutionKeys(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   for (const key of keys) await page.keyboard.press(key);
   await expect(status(page)).toHaveText('solved');
@@ -239,6 +278,56 @@ test('玩家自己用鍵盤解完：跳出完成畫面並記錄最佳成績', as
   await expect(status(page)).toHaveText('ready', { timeout: 20_000 });
   expect(await isSolved(page)).toBe(false);
   expect(await visualKey(page)).toBe(await logicalKey(page));
+});
+
+test('解完那一步的動畫還沒播完又多按幾個鍵：完成畫面照樣出現，邏輯和畫面一致且是完成狀態', async ({ page }) => {
+  await openGame(page);
+  await startGame(page);
+  const keys = await scrambleSolutionKeys(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  for (const key of keys) await page.keyboard.press(key);
+  for (const key of ['r', 'u', 'f', 'Shift+L']) await page.keyboard.press(key);
+  await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 15_000 });
+  await expect(status(page)).toHaveText('solved');
+  await expect(page.getByTestId('stat-moves')).toHaveText(String(keys.length));
+  await expectSolvedEverywhere(page);
+  await page.getByTestId('btn-close-modal').click();
+  await expect(status(page)).toHaveText('idle');
+  await expectSolvedEverywhere(page);
+});
+
+test('轉過中間層再放棄：Kociemba 解完、關閉後 store 和畫面仍然一致', async ({ page }) => {
+  test.slow();
+  await openGame(page);
+  await startGame(page);
+  // 正面正中間那張貼紙往上拖 → 轉的是中間層
+  const point = await page.evaluate(() => (window as unknown as { __cubie: CubieDebug }).__cubie.engine.projectToScreen(0, 0, 1.5));
+  await touchDrag(page, point, 0, -70);
+  await expect(page.getByTestId('stat-moves')).toContainText('1');
+  const centers = await page.evaluate(() => {
+    const { cube } = (window as unknown as { __cubie: CubieDebug }).__cubie.store.getState();
+    return cube.stickers.filter((s) => s.position.filter((v) => v === 0).length === 2 && s.normal[2] === 1).map((s) => s.color);
+  });
+  expect(centers).not.toEqual(['F']);
+  await giveUpWithKociemba(page, 60_000);
+});
+
+test('兩指捏合方塊不會轉層，也不會轉視角', async ({ page }) => {
+  await openGame(page);
+  await startGame(page);
+  const before = await logicalKey(page);
+  const corner = () => page.evaluate(() => (window as unknown as { __cubie: CubieDebug }).__cubie.engine.projectToScreen(1.5, 1.5, 1.5));
+  const cornerBefore = await corner();
+  const point = await page.evaluate(() => (window as unknown as { __cubie: CubieDebug }).__cubie.engine.projectToScreen(0, 0, 1.5));
+  await pinch(page, point);
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId('stat-moves')).toHaveText('0');
+  expect(await logicalKey(page)).toBe(before);
+  expect(await visualKey(page)).toBe(before);
+  expect(await corner()).toEqual(cornerBefore);
+  // 手指都放開後，單指拖曳恢復正常
+  await touchDrag(page, point, 0, -70);
+  await expect(page.getByTestId('stat-moves')).toHaveText('1');
 });
 
 for (const size of [2, 3, 4]) {
@@ -322,4 +411,16 @@ test('滑鼠移到方塊上游標變成手掌，按住變成抓住，空白處�
   await page.mouse.down();
   expect(await cursor()).toBe('move');
   await page.mouse.up();
+
+  // 打亂中滑鼠停在方塊上是一般游標；打亂播完重新開放輸入時，不用動滑鼠就變回手掌
+  await page.getByTestId('btn-start').click();
+  await page.mouse.move(front.x, front.y);
+  // 狀態和游標在同一次 evaluate 讀，避免機器忙時讀到一半打亂剛好播完
+  const during = await page.evaluate(() => ({
+    status: document.querySelector('[data-testid="game-status"]')?.textContent,
+    cursor: (document.querySelector('[data-testid="cube-canvas"] canvas') as HTMLElement).style.cursor,
+  }));
+  if (during.status === 'scrambling') expect(during.cursor).toBe('default');
+  await expect(status(page)).toHaveText('ready', { timeout: 20_000 });
+  await expect.poll(cursor).toBe('grab');
 });

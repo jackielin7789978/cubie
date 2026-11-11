@@ -288,6 +288,41 @@ test.describe('engine', () => {
   });
 });
 
+/** 用 WEBGL_lose_context 模擬 context 遺失再還原（iOS Safari 分頁放背景可能發生） */
+async function loseAndRestoreContext(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const canvas = document.querySelector('#stage canvas') as HTMLCanvasElement;
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext;
+    const ext = gl.getExtension('WEBGL_lose_context')!;
+    const once = (type: string) => new Promise<void>((r) => canvas.addEventListener(type, () => r(), { once: true }));
+    const lost = once('webglcontextlost');
+    ext.loseContext();
+    await lost;
+    // 立刻還原的話 Chrome 不一定會送出 restored 事件，等一下比較接近真實情況
+    await new Promise((r) => setTimeout(r, 300));
+    const restored = once('webglcontextrestored');
+    ext.restoreContext();
+    await restored;
+  });
+}
+
+test.describe('WebGL context 遺失後還原', () => {
+  for (const theme of ['classic', 'neon']) {
+    test(`${theme}：還原後不需互動就自動重畫，畫面和遺失前幾乎一樣`, async ({ page }) => {
+      const errors = await openEngine(page, 3, theme);
+      await page.evaluate(() => window.engine.enqueueMoves([{ axis: 'x', layer: 1, dir: -1 }], { durationMs: 10 }));
+      await waitIdle(page);
+      const before = await shot(page);
+      await loseAndRestoreContext(page);
+      await nextFrames(page);
+      await nextFrames(page);
+      const after = await shot(page);
+      expect(await diffRatio(page, before, after)).toBeLessThan(0.02);
+      expect(errors.filter((e) => !/context (lost|restored)/i.test(e))).toEqual([]);
+    });
+  }
+});
+
 // 視覺檢查用截圖：三種主題 × 三種尺寸 × 三種 viewport，只在桌機 project 跑一次
 test.describe('engine 截圖', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', '只在 chromium 截圖');

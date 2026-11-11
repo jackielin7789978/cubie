@@ -12,11 +12,14 @@ interface MoveLike {
 interface CubieDebug {
   store: { getState(): { cube: unknown; size: number; scrambleMoves: MoveLike[]; history: MoveLike[] } };
   engine: { simulateUserMove(move: MoveLike): void; getState(): unknown } | null;
+  controller: { setSolutionProvider(provider: ((state: unknown) => Promise<MoveLike[]> | null) | null): void };
 }
 
 declare global {
   interface Window {
     __cubie?: CubieDebug;
+    /** 測試注入的延遲解法器：呼叫它才把解法交出去 */
+    __releaseSolution?: () => void;
   }
 }
 
@@ -336,6 +339,78 @@ test.describe('UI 流程', () => {
     await page.reload();
     await expect(page.getByTestId('theme-brand')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('html')).toHaveAttribute('data-ui', 'light');
+  });
+
+  test('放棄後等解法期間：立刻停表，按鈕顯示「Kociemba 思考中…」', async ({ page }) => {
+    // 換成一個要等測試放行才交出解法的解法器，模擬 Kociemba 還在建表
+    await page.evaluate(() => {
+      window.__cubie!.controller.setSolutionProvider(() => {
+        const { scrambleMoves, history } = window.__cubie!.store.getState();
+        const solution = [...scrambleMoves, ...history].map((m) => ({ ...m, dir: m.dir === 1 ? -1 : 1 }) as MoveLike).reverse();
+        return new Promise((resolve) => (window.__releaseSolution = () => resolve(solution)));
+      });
+    });
+    await startGame(page);
+    await userMove(page, R);
+    await page.waitForTimeout(150);
+    const button = page.getByTestId('btn-giveup');
+    await button.click();
+    await button.click();
+    await expect(button).toHaveText('Kociemba 思考中…');
+    await expect(button).toHaveAttribute('aria-busy', 'true');
+    await expect(button).toBeDisabled();
+    await expect(page.getByTestId('btn-undo')).toBeDisabled();
+    const frozen = await page.getByTestId('stat-time').textContent();
+    await page.waitForTimeout(400);
+    await expect(page.getByTestId('stat-time')).toHaveText(frozen!);
+    await page.evaluate(() => window.__releaseSolution!());
+    await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('放棄確認中按 Esc 或焦點離開按鈕都會取消', async ({ page }) => {
+    await startGame(page);
+    const button = page.getByTestId('btn-giveup');
+    // 用鍵盤操作（WebKit 點按鈕不會讓按鈕取得焦點）
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await expect(button).toHaveAttribute('data-armed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(button).toHaveText('放棄');
+    await expect(button).toHaveAttribute('data-armed', 'false');
+
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await expect(button).toHaveAttribute('data-armed', 'true');
+    await button.evaluate((el) => (el as HTMLElement).blur());
+    await expect(button).toHaveText('放棄');
+    await expect(status(page)).toHaveText('ready');
+  });
+
+  test('完成彈窗有焦點陷阱，關閉後焦點回到「開始遊戲」', async ({ page }) => {
+    await startGame(page);
+    await solveByHand(page);
+    const modal = page.getByTestId('solved-modal');
+    await expect(modal).toBeVisible({ timeout: 15_000 });
+    const focused = () => page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
+    await expect.poll(focused).toBe('btn-play-again');
+    await page.keyboard.press('Tab');
+    expect(await focused()).toBe('btn-close-modal');
+    await page.keyboard.press('Tab');
+    expect(await focused()).toBe('btn-play-again');
+    await page.keyboard.press('Shift+Tab');
+    expect(await focused()).toBe('btn-close-modal');
+    await page.keyboard.press('Enter');
+    await expect(modal).toBeHidden();
+    await expect.poll(focused).toBe('btn-start');
+  });
+
+  test('無障礙標示：方塊區有 role=img 和隨尺寸變的說明，測試用的狀態元素對螢幕閱讀器隱藏', async ({ page }) => {
+    const stage = page.getByTestId('cube-canvas');
+    await expect(stage).toHaveAttribute('role', 'img');
+    await expect(stage).toHaveAttribute('aria-label', '3×3 魔術方塊，拖曳方塊轉動一層，拖曳空白處旋轉視角');
+    await page.getByTestId('size-2').click();
+    await expect(stage).toHaveAttribute('aria-label', /^2×2 魔術方塊/);
+    await expect(status(page)).toHaveAttribute('aria-hidden', 'true');
   });
 
   test('頁面不能捲動，按鈕觸控範圍至少 44px', async ({ page }) => {
