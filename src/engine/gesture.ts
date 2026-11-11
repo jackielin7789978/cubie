@@ -2,6 +2,8 @@
 import { Vector3 } from 'three';
 import type { Axis, Move, Vec3 } from '../core/types';
 import { AXES, AXIS_INDEX } from '../core/types';
+import { faceMove, invertMove } from '../core/moves';
+import type { FaceLetter } from '../core/moves';
 
 /** 螢幕座標（像素，y 往下） */
 export interface ScreenPoint {
@@ -86,20 +88,12 @@ export function dragToMove(hit: FaceHit, drag: ScreenPoint, project: Projector):
 }
 
 /** 外層面代號 → 轉動軸、在哪一側、順時針時的 dir。順時針 = 從面外面看過去順時針 = 繞外向法向量 -90°。 */
-const FACE_KEYS: Record<string, { axis: Axis; side: 1 | -1 }> = {
-  U: { axis: 'y', side: 1 },
-  D: { axis: 'y', side: -1 },
-  R: { axis: 'x', side: 1 },
-  L: { axis: 'x', side: -1 },
-  F: { axis: 'z', side: 1 },
-  B: { axis: 'z', side: -1 },
-};
+const FACE_LETTERS: readonly string[] = ['U', 'D', 'R', 'L', 'F', 'B'];
 
-/** 鍵盤按鍵 → Move。不是 U D L R F B 時回傳 null。shift = 逆時針。 */
+/** 鍵盤按鍵 → Move（對照表用 core 的 faceMove）。不是 U D L R F B 時回傳 null。shift = 逆時針。 */
 export function keyToMove(key: string, shift: boolean, size: number): Move | null {
-  const face = FACE_KEYS[key.toUpperCase()];
-  if (!face) return null;
-  const clockwiseDir = -face.side as 1 | -1;
-  const dir = (shift ? -clockwiseDir : clockwiseDir) as 1 | -1;
-  return { axis: face.axis, layer: (face.side * (size - 1)) / 2, dir };
+  const letter = key.toUpperCase();
+  if (!FACE_LETTERS.includes(letter)) return null;
+  const clockwise = faceMove(letter as FaceLetter, size);
+  return shift ? invertMove(clockwise) : clockwise;
 }

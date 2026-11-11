@@ -75,7 +75,8 @@ export function moveToNotation(move: Move, size: number): string {
   return move.dir === faceMove(face, size).dir ? face : `${face}'`;
 }
 
-function isSameMove(a: Move, b: Move): boolean {
+/** 同一層、同方向的轉動 */
+export function isSameMove(a: Move, b: Move): boolean {
   return isSameLayer(a, b) && a.dir === b.dir;
 }
 

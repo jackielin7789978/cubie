@@ -2,6 +2,7 @@ export * from './types';
 export * from './cubeState';
 export * from './moves';
 export * from './scramble';
+export * from './nearSolved';
 export * from './solver/reverseSolver';
 export * from './facelets';
 export * from './random';

@@ -1,5 +1,5 @@
 // 遊戲規則的純函式：輸入目前狀態，回傳要更新的欄位。store 的 action 只負責把它們組起來。
-import { applyMove, applyMoves, createSolvedState, isSolved } from '../core';
+import { applyMove, applyMoves, createSolvedState, isSameMove, isSolved } from '../core';
 import type { CubeSize, Move } from '../core/types';
 import type { BestRecord, GameState } from './types';
 
@@ -110,10 +110,6 @@ export function countSteps(moves: readonly Move[]): number {
     steps++;
   }
   return steps;
-}
-
-function isSameMove(a: Move, b: Move): boolean {
-  return a.axis === b.axis && a.layer === b.layer && a.dir === b.dir;
 }
 
 /** ready / solving 時的轉動：第一步開始計時，每一步都算步數，轉完檢查是否完成 */
