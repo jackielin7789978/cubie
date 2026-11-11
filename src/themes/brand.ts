@@ -6,7 +6,7 @@ export const brandTheme: Theme = {
   name: 'Omnichat',
   background: 'linear-gradient(#EAECFF, #FFFFFF)',
   bodyColor: '#F4F6FB',
-  faceColors: { U: '#D5DCEF', D: '#000052', F: '#4F46E5', B: '#10B981', R: '#73BEF5', L: '#A5B4FC' },
+  faceColors: { U: '#E6EAF5', D: '#000052', F: '#4F46E5', B: '#10B981', R: '#73BEF5', L: '#A5B4FC' },
   sticker: { roughness: 0.25, metalness: 0, clearcoat: 1 },
   bloom: false,
   lighting: { environment: 0.35, key: 1.6, ambient: 1.1 },
