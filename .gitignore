@@ -17,3 +17,6 @@ blob-report/
 
 # subagent 的 git worktree
 .claude/worktrees/
+
+# reviewer 審查時另外截的圖（量大，不進版控）
+screenshots/review/
