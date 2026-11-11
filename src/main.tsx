@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { createKociembaProvider } from './hooks/kociembaProvider';
 import './styles/app.css';
 
 /** iOS Safari 不理會 user-scalable=no，要另外擋掉雙指縮放手勢，頁面才不會被放大拖動 */
@@ -29,8 +30,11 @@ function guardDevPerformanceMeasure(): void {
 preventPageZoom();
 if (import.meta.env.DEV) guardDevPerformanceMeasure();
 
+// 放在模組最外層，整個 App 只建立一次（放在元件裡的話每次重畫都會重建）
+const solutionProvider = createKociembaProvider();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <App solutionProvider={solutionProvider} />
   </StrictMode>,
 );

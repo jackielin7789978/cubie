@@ -513,3 +513,9 @@ button {
     animation: none;
   }
 }
+
+/* engine 會把自己的 container 背景設成主題背景；在 App 裡頁面本身已經有同一個背景，
+   container 改成透明，手機版方塊區和下方面板之間才不會出現漸層接縫 */
+.cube-canvas {
+  background: transparent !important;
+}

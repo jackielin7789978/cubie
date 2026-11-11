@@ -1,7 +1,7 @@
 // 把遊戲 store 和 3D engine 接起來的控制器。這個檔案是一般的 TypeScript class，不依賴 React，
 // React 元件透過 useGameController() 取得同一個實例。
 import type { StoreApi } from 'zustand';
-import { createSolvedState, isSolved } from '../core';
+import { createSolvedState, isSolved, reverseSolve } from '../core';
 import type { CubeSize, CubeState, Move } from '../core/types';
 import { MOVE_DURATION } from '../engine/types';
 import type { CubeEngine } from '../engine/types';
@@ -95,7 +95,7 @@ export class GameController {
     const round = ++this.round;
     const solution = await this.computeSolution(this.game.getState().cube);
     if (round !== this.round) return;
-    const moves = this.game.getState().beginAutoSolve(solution ?? undefined);
+    const moves = this.game.getState().beginAutoSolve(this.pickShorter(solution));
     if (moves.length === 0) return;
     await this.engine?.enqueueMoves(moves, { durationMs: MOVE_DURATION.solve });
     this.game.getState().finishAutoSolve();
@@ -129,6 +129,14 @@ export class GameController {
     const round = this.round;
     await this.engine?.whenIdle();
     if (round === this.round && this.game.getState().status === 'solved') this.ui.getState().openSolvedModal();
+  }
+
+  /** 外部解法和反轉歷史取比較短的那個（只轉了幾步時，直接倒著轉回去比較快也比較直覺） */
+  private pickShorter(solution: Move[] | null): Move[] | undefined {
+    if (!solution) return undefined;
+    const { scrambleMoves, history } = this.game.getState();
+    const reversed = reverseSolve([...scrambleMoves, ...history]);
+    return solution.length < reversed.length ? solution : undefined;
   }
 
   /** 問外部解法器要解法；沒有解法器、不處理這個狀態或出錯都回傳 null */

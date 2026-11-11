@@ -21,10 +21,6 @@ interface CubieDebug {
   };
 }
 
-function cubie(): CubieDebug {
-  return (window as unknown as { __cubie: CubieDebug }).__cubie;
-}
-
 /** 開啟頁面並收集 console error */
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -157,22 +153,27 @@ test('打亂 → 轉一步開始計時 → 上一步 → 自動還原跳出完�
   expect(errors).toEqual([]);
 });
 
-test('手動解完會跳出完成畫面並記錄最佳成績', async ({ page }) => {
+test('玩家自己用鍵盤解完：跳出完成畫面並記錄最佳成績', async ({ page }) => {
   await openGame(page);
   await scramble(page);
-  // 用「上一步」沒辦法撤銷打亂，所以這裡轉一步再轉回來不會完成；
-  // 改成直接驗證：打亂後玩家照反向序列轉回去 → 完成並寫入最佳紀錄
-  const solution = await page.evaluate(() => {
-    const { store } = (window as unknown as { __cubie: { store: { getState(): { scrambleMoves: { axis: string; layer: number; dir: number }[] } } } }).__cubie;
-    return [...store.getState().scrambleMoves].reverse().map((m) => ({ ...m, dir: -m.dir }));
+  // 「上一步」不能撤銷打亂，所以這裡把打亂序列倒過來，用鍵盤一步一步轉回去
+  const keys = await page.evaluate(() => {
+    type M = { axis: 'x' | 'y' | 'z'; layer: number; dir: number };
+    const { store } = (window as unknown as { __cubie: { store: { getState(): { scrambleMoves: M[] } } } }).__cubie;
+    const faces = { x: ['R', 'L'], y: ['U', 'D'], z: ['F', 'B'] };
+    return [...store.getState().scrambleMoves].reverse().map((m) => {
+      const face = faces[m.axis][m.layer > 0 ? 0 : 1];
+      // 反向之後的方向是 -m.dir；順時針 = 方向和該層座標的正負號相反
+      const clockwise = -m.dir === -Math.sign(m.layer);
+      return clockwise ? face.toLowerCase() : `Shift+${face}`;
+    });
   });
-  await page.evaluate((moves) => {
-    const { store } = (window as unknown as { __cubie: { store: { getState(): { applyUserMove(m: unknown): void } } } }).__cubie;
-    for (const move of moves) store.getState().applyUserMove(move);
-  }, solution);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  for (const key of keys) await page.keyboard.press(key);
   await expect(status(page)).toHaveText('solved');
-  await expect(page.getByTestId('solved-modal')).toBeVisible();
+  await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('stat-best')).not.toHaveText('—');
+  expect(await visualKey(page)).toBe(await logicalKey(page));
 });
 
 for (const size of [2, 3, 4]) {
