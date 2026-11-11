@@ -108,6 +108,53 @@ describe('GameController', () => {
     expect(ui.getState().computingSolution).toBe(false);
   });
 
+  it('解完的那一刻同步關掉轉層輸入：之後多轉的一步不算，完成畫面照樣打開', async () => {
+    const { game, ui, controller, calls } = setup();
+    await controller.startGame();
+    for (const move of invertMoves(SCRAMBLE)) controller.handleUserMove(move);
+    // 還在 handleUserMove 裡（同步）就已經關掉輸入
+    expect(calls.input.at(-1)).toBe(false);
+    const solvedCube = game.getState().cube;
+    controller.handleUserMove(R);
+    expect(game.getState().cube).toBe(solvedCube);
+    expect(game.getState().status).toBe('solved');
+    await vi.waitFor(() => expect(ui.getState().solvedModalOpen).toBe(true));
+    controller.closeSolvedModal();
+    expect(calls.input.at(-1)).toBe(true);
+  });
+
+  it('關掉 Kociemba 的完成畫面時，engine 也對齊 store 的方塊', async () => {
+    const { game, controller, calls } = setup();
+    controller.setSolutionProvider(() => Promise.resolve(invertMoves(SCRAMBLE)));
+    await controller.startGame();
+    await controller.giveUp();
+    controller.closeSolvedModal();
+    expect(calls.states.at(-1)).toBe(game.getState().cube);
+  });
+
+  it('確認放棄當下就停表；等解法期間時間不再走', async () => {
+    let now = 0;
+    const game = createGameStore({ storage: null, now: () => now, scramble: () => [...SCRAMBLE] });
+    const ui = createUiStore();
+    const controller = new GameController(game, ui);
+    controller.attachEngine(fakeEngine().engine);
+    let resolveSolution: (moves: Move[]) => void = () => {};
+    controller.setSolutionProvider(() => new Promise<Move[]>((resolve) => (resolveSolution = resolve)));
+    await controller.startGame();
+    now = 1000;
+    controller.handleUserMove(R);
+    now = 3000;
+    const done = controller.giveUp();
+    expect(ui.getState().computingSolution).toBe(true);
+    expect(game.getState().startedAt).toBeNull();
+    expect(game.getState().finalTimeMs).toBe(2000);
+    now = 9000;
+    resolveSolution(invertMoves([...SCRAMBLE, R]));
+    await done;
+    expect(game.getState().finalTimeMs).toBe(2000);
+    expect(game.getState().status).toBe('solved');
+  });
+
   it('Kociemba 的解比打亂還長也照樣用它', async () => {
     const { controller, calls } = setup();
     const longer = [...invertMoves(SCRAMBLE), R, R, R, R];

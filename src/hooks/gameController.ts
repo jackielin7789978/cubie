@@ -97,6 +97,7 @@ export class GameController {
   async giveUp(): Promise<void> {
     if (this.ui.getState().computingSolution || !canGiveUp(this.game.getState())) return;
     const round = ++this.round;
+    this.game.getState().stopClock();
     const solution = await this.computeSolution(this.game.getState().cube);
     if (round !== this.round) return;
     const moves = solution ? this.game.getState().beginKociembaSolve(solution) : [];
@@ -121,6 +122,8 @@ export class GameController {
   closeSolvedModal(): void {
     this.ui.getState().closeSolvedModal();
     this.game.getState().dismissSolved();
+    // 保險：關掉後畫面一律對齊邏輯狀態（例如 Kociemba 解完整顆轉了方向）
+    this.engine?.setState(this.game.getState().cube);
   }
 
   /** 完成畫面的「再玩一次」：直接開始下一局 */
@@ -161,13 +164,18 @@ export class GameController {
     if (!this.engine) return;
     if (state.size !== prev.size) this.engine.setSize(state.size);
     if (state.themeId !== prev.themeId) this.engine.setTheme(THEMES[state.themeId]);
-    if (isLocked(state) !== isLocked(prev)) this.syncInput();
+    if (isLocked(state) !== isLocked(prev) || state.status !== prev.status) this.syncInput();
   }
 
-  /** 打亂、Kociemba 還原動畫、等解法或完成畫面打開時關掉玩家輸入（仍然可以旋轉視角） */
+  /**
+   * 打亂、Kociemba 還原動畫、等解法、解完到完成畫面關掉之前都關掉玩家輸入（仍然可以旋轉視角）。
+   * store 的 subscribe 是同步的：玩家轉完最後一步的當下（engine 還在 onUserMove 裡）就會關掉，
+   * 後面再按的鍵或拖曳不會讓畫面多轉一步。
+   */
   private syncInput(): void {
     const ui = this.ui.getState();
-    const busy = isLocked(this.game.getState()) || ui.computingSolution || ui.solvedModalOpen;
+    const game = this.game.getState();
+    const busy = isLocked(game) || game.status === 'solved' || ui.computingSolution || ui.solvedModalOpen;
     this.engine?.setInputEnabled(!busy);
   }
 

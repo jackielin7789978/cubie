@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 
 /** 第一次按下後，這段時間內再按一次才真的放棄 */
 export const GIVE_UP_CONFIRM_MS = 3000;
@@ -7,6 +8,8 @@ interface GiveUpButtonProps {
   disabled: boolean;
   /** 3×3 有 Kociemba 解法器：確認狀態的文字換成「Kociemba」（小彩蛋） */
   kociemba: boolean;
+  /** 已經確認放棄、正在等解法器算解：文字換成「Kociemba 思考中…」 */
+  thinking: boolean;
   onConfirm: () => void;
 }
 
@@ -20,9 +23,9 @@ function armedText(kociemba: boolean): { label: string; ariaLabel: string } {
 /**
  * 「放棄」按鈕：為了避免誤觸要按兩次。
  * 第一次按下變成「確定放棄？」（3×3 是「Kociemba」，紅色），3 秒內再按一次才放棄；
- * 逾時或按了別的地方就恢復原狀。
+ * 逾時、按了別的地方、按 Esc 或焦點離開這顆按鈕，就恢復原狀。
  */
-export function GiveUpButton({ disabled, kociemba, onConfirm }: GiveUpButtonProps) {
+export function GiveUpButton({ disabled, kociemba, thinking, onConfirm }: GiveUpButtonProps) {
   // armed：是不是已經按過第一次、正在等確認。useState 的值變了，React 會重新畫這顆按鈕。
   const [armed, setArmed] = useState(false);
   // useRef：拿到真正的 <button> DOM 元素，用來判斷「點的是不是這顆按鈕以外的地方」。
@@ -52,6 +55,20 @@ export function GiveUpButton({ disabled, kociemba, onConfirm }: GiveUpButtonProp
     onConfirm();
   };
 
+  // 鍵盤操作：等確認時按 Esc 取消（React 的 onKeyDown 只在焦點在這顆按鈕上時觸發）
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'Escape' && active) setArmed(false);
+  };
+
+  if (thinking) {
+    const label = kociemba ? 'Kociemba 思考中…' : '放棄中…';
+    return (
+      <button type="button" className="btn btn-danger" data-testid="btn-giveup" aria-busy="true" disabled>
+        {label}
+      </button>
+    );
+  }
+
   const confirm = armedText(kociemba);
   return (
     <button
@@ -63,6 +80,8 @@ export function GiveUpButton({ disabled, kociemba, onConfirm }: GiveUpButtonProp
       aria-label={active ? confirm.ariaLabel : '放棄這一局'}
       disabled={disabled}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      onBlur={() => setArmed(false)}
     >
       {active ? confirm.label : '放棄'}
     </button>

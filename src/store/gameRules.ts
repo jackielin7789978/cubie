@@ -67,11 +67,12 @@ export function completionPatch(state: GameState, now: number): Partial<GameStat
  * Kociemba 解完的那一局：整個歸零（時間、步數都不是玩家的成績）。
  */
 export function dismissPatch(state: GameState): Partial<GameState> {
-  if (state.kociembaSteps !== null) return freshRound(state.size);
+  // 方塊保留 Kociemba 解完的樣子（可能整顆轉了方向），邏輯才會和畫面一致
+  if (state.kociembaSteps !== null) return { ...freshRound(state.size), cube: state.cube };
   return { status: 'idle', scrambleMoves: [], history: [], isNewBest: false };
 }
 
-/** idle（或剛完成）時的自由轉動：不計時、不計步，也不留歷史（待機時沒有「上一步」） */
+/** idle 時的自由轉動：不計時、不計步，也不留歷史（待機時沒有「上一步」） */
 export function freePlayMove(state: GameState, move: Move): Partial<GameState> {
   return { status: 'idle', cube: applyMove(state.cube, move) };
 }
@@ -91,9 +92,17 @@ export function kociembaSolvePatch(state: GameState, solution: readonly Move[], 
     kociembaSteps: countSteps(solution),
     cube: applyMoves(state.cube, solution),
     history: [],
-    startedAt: null,
-    finalTimeMs: elapsedSince(state, now),
+    ...stopClockPatch(state, now),
   };
+}
+
+/**
+ * 停表：時間停在這一刻（startedAt 設成 null 讓計時器停下，顯示 finalTimeMs）。
+ * 已經停過就保留原本的時間（放棄確認時先停表，等 Kociemba 算完再開始播動畫）。
+ */
+export function stopClockPatch(state: GameState, now: number): Pick<GameState, 'startedAt' | 'finalTimeMs'> {
+  if (state.startedAt === null) return { startedAt: null, finalTimeMs: state.finalTimeMs };
+  return { startedAt: null, finalTimeMs: elapsedSince(state, now) };
 }
 
 /** Kociemba 還原動畫播完：變成 solved（跳完成畫面），不列入最佳紀錄 */

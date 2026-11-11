@@ -140,12 +140,24 @@ describe('狀態機', () => {
     expect(ctx.act().moveCount).toBe(2);
   });
 
-  it('完成後直接轉動：當成自由轉動', () => {
+  it('解完（完成畫面還沒關）時忽略轉動，慶祝畫面不會被吃掉', () => {
     const ctx = scrambled();
     solveManually(ctx, 0, 1000);
+    const solvedCube = ctx.act().cube;
+    ctx.act().applyUserMove(F, 2000);
+    expect(ctx.act().status).toBe('solved');
+    expect(ctx.act().cube).toBe(solvedCube);
+    expect(ctx.act().moveCount).toBe(2);
+    expect(ctx.act().finalTimeMs).toBe(1000);
+  });
+
+  it('關掉完成畫面回到 idle 之後才能自由轉動', () => {
+    const ctx = scrambled();
+    solveManually(ctx, 0, 1000);
+    ctx.act().dismissSolved();
     ctx.act().applyUserMove(F, 2000);
     expect(ctx.act().status).toBe('idle');
-    expect(ctx.act().moveCount).toBe(2);
+    expect(isSolved(ctx.act().cube)).toBe(false);
   });
 });
 
@@ -399,6 +411,43 @@ describe('放棄：3×3 交給 Kociemba', () => {
     expect(state.scrambleMoves).toEqual([]);
     expect(state.kociembaSteps).toBeNull();
     expect(isSolved(state.cube)).toBe(true);
+  });
+
+  it('關掉完成畫面：保留 Kociemba 解完的方塊（整顆轉了方向也一樣），邏輯和畫面才一致', () => {
+    const ctx = scrambled();
+    // 轉一次中間層：Kociemba 會把它解成整顆轉了方向的完成狀態
+    const slice: Move = { axis: 'x', layer: 0, dir: 1 };
+    ctx.act().applyUserMove(slice, 1000);
+    const solution = solutionFor(ctx);
+    ctx.act().beginKociembaSolve(solution, 4000);
+    const solvedCube = ctx.act().cube;
+    ctx.act().finishKociembaSolve();
+    ctx.act().dismissSolved();
+    expect(ctx.act().cube).toBe(solvedCube);
+    expect(isSolved(ctx.act().cube)).toBe(true);
+  });
+
+  it('確認放棄時先停表；之後 Kociemba 開始播動畫也維持同一個時間', () => {
+    const ctx = scrambled();
+    ctx.act().applyUserMove(F, 1000);
+    ctx.act().stopClock(2500);
+    expect(ctx.act().startedAt).toBeNull();
+    expect(ctx.act().finalTimeMs).toBe(1500);
+    ctx.act().beginKociembaSolve(solutionFor(ctx), 9000);
+    expect(ctx.act().finalTimeMs).toBe(1500);
+  });
+
+  it('還沒轉第一步就放棄：停表後時間是 null', () => {
+    const ctx = scrambled();
+    ctx.act().stopClock(2500);
+    expect(ctx.act().finalTimeMs).toBeNull();
+  });
+
+  it('待機時 stopClock 不做事', () => {
+    const ctx = setup();
+    ctx.act().stopClock(2500);
+    expect(ctx.act().status).toBe('idle');
+    expect(ctx.act().finalTimeMs).toBeNull();
   });
 
   it('完成畫面直接再玩一次：新的一局清掉 Kociemba 的紀錄，自己解完照樣算新紀錄', () => {

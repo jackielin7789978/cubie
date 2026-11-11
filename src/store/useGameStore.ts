@@ -13,6 +13,7 @@ import {
   KOCIEMBA_DONE_PATCH,
   kociembaSolvePatch,
   solvesCube,
+  stopClockPatch,
   timedMove,
   withCompletion,
 } from './gameRules';
@@ -75,9 +76,9 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
       },
 
       applyUserMove(move, now = deps.now()) {
-        const current = get();
-        if (isLocked(current)) return;
-        const state = current.status === 'solved' ? { ...current, ...dismissPatch(current) } : current;
+        const state = get();
+        // 解完（完成畫面還沒關）時不接受轉動：慶祝畫面不會被多轉的一步吃掉
+        if (isLocked(state) || state.status === 'solved') return;
         const timed = state.status === 'ready' || state.status === 'solving';
         set(timed ? timedMove(state, move, now) : freePlayMove(state, move));
         saveBestIfNew(get());
@@ -93,6 +94,11 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
         set(withCompletion({ ...next, moveCount: state.moveCount + 1 }, now));
         saveBestIfNew(get());
         return move;
+      },
+
+      stopClock(now = deps.now()) {
+        const state = get();
+        if (canGiveUp(state)) set(stopClockPatch(state, now));
       },
 
       abandonGame() {
