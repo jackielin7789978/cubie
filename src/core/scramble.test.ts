@@ -12,6 +12,9 @@ import {
 } from './scramble';
 import type { CubeState, Move } from './types';
 
+/** 大量取樣的測試在 CI（GitHub Actions）比本機慢好幾倍，逾時放寬到 60 秒 */
+const SAMPLING_TIMEOUT_MS = 60_000;
+
 describe.each([2, 3, 4])('尺寸 %i 的打亂', (size) => {
   it('長度符合預設值，也可以自訂長度', () => {
     expect(generateScramble(size)).toHaveLength(defaultScrambleLength(size));
@@ -50,7 +53,7 @@ describe.each([2, 3, 4])('尺寸 %i 的打亂', (size) => {
       const scrambled = applyMoves(solved, generateScramble(size, undefined, createSeededRng(seed)));
       expect(isSolved(scrambled)).toBe(false);
     }
-  });
+  }, SAMPLING_TIMEOUT_MS);
 });
 
 /** 測試用的獨立 BFS：從打亂的狀態往外走，看 maxDepth 步（半圈計數）以內能不能解完 */
@@ -88,7 +91,7 @@ describe('2×2 打亂品質', () => {
       expect(isWithinMovesOfSolved(scrambled, 3)).toBe(false);
       if (seed < 100) expect(bfsSolvableWithin(scrambled, 3)).toBe(false);
     }
-  });
+  }, SAMPLING_TIMEOUT_MS);
 
   it('BFS 抽查：產生器的近距離檢查和獨立 BFS 結果一致', () => {
     const solved = createSolvedState(2);
@@ -100,7 +103,7 @@ describe('2×2 打亂品質', () => {
       const scrambled = applyMoves(solved, moves);
       expect(isWithinMovesOfSolved(scrambled, 3)).toBe(bfsSolvableWithin(scrambled, 3));
     }
-  });
+  }, SAMPLING_TIMEOUT_MS);
 
   it('太接近完成的打亂不被接受', () => {
     const solved = createSolvedState(2);
