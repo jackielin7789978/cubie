@@ -14,3 +14,6 @@ blob-report/
 
 # 系統檔
 .DS_Store
+
+# subagent 的 git worktree
+.claude/worktrees/
