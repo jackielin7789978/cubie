@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import type { StateCreator } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { applyMove, applyMoves, createSolvedState, generateScramble, invertMove, isSolved } from '../core';
+import { applyMove, applyMoves, createSolvedState, generateScramble, invertMove } from '../core';
 import type { Move } from '../core/types';
 import {
-  chooseSolution,
-  completionPatch,
-  DISMISS_PATCH,
+  canGiveUp,
+  dismissPatch,
   freePlayMove,
   freshRound,
+  isInGame,
   isLocked,
+  KOCIEMBA_DONE_PATCH,
+  kociembaSolvePatch,
+  solvesCube,
   timedMove,
   withCompletion,
 } from './gameRules';
@@ -48,6 +51,7 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
       ...freshRound(prefs.size),
 
       setSize(size) {
+        if (isInGame(get())) return;
         set({ size, ...freshRound(size) });
         writeJson(deps.storage, STORAGE_KEYS.size, size);
       },
@@ -57,9 +61,9 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
         writeJson(deps.storage, STORAGE_KEYS.theme, themeId);
       },
 
-      beginScramble() {
+      startGame() {
         const state = get();
-        if (isLocked(state)) return [];
+        if (isInGame(state) || isLocked(state)) return [];
         const moves = deps.scramble(state.size);
         const cube = applyMoves(createSolvedState(state.size), moves);
         set({ ...freshRound(state.size), status: 'scrambling', cube, scrambleMoves: moves });
@@ -73,7 +77,7 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
       applyUserMove(move, now = deps.now()) {
         const current = get();
         if (isLocked(current)) return;
-        const state = current.status === 'solved' ? { ...current, ...DISMISS_PATCH } : current;
+        const state = current.status === 'solved' ? { ...current, ...dismissPatch(current) } : current;
         const timed = state.status === 'ready' || state.status === 'solving';
         set(timed ? timedMove(state, move, now) : freePlayMove(state, move));
         saveBestIfNew(get());
@@ -82,31 +86,34 @@ export function gameStoreCreator(deps: GameStoreDeps = defaultDeps()): StateCrea
       undo(now = deps.now()) {
         const state = get();
         const last = state.history[state.history.length - 1];
-        if (isLocked(state) || state.status === 'solved' || !last) return null;
+        if (isLocked(state) || state.status !== 'solving' || !last) return null;
         const move = invertMove(last);
         const next = { ...state, cube: applyMove(state.cube, move), history: state.history.slice(0, -1) };
         // SPEC：計時中按「上一步」也算一步，避免靠上一步刷成績
-        set(state.status === 'solving' ? withCompletion({ ...next, moveCount: state.moveCount + 1 }, now) : next);
+        set(withCompletion({ ...next, moveCount: state.moveCount + 1 }, now));
         saveBestIfNew(get());
         return move;
       },
 
-      beginAutoSolve(solution) {
+      abandonGame() {
         const state = get();
-        if (isLocked(state) || isSolved(state.cube)) return [];
-        const moves = chooseSolution(state, solution);
-        set({ autoSolving: true, usedAutoSolve: true, cube: applyMoves(state.cube, moves), history: [] });
-        return moves;
+        if (canGiveUp(state)) set(freshRound(state.size));
       },
 
-      finishAutoSolve(now = deps.now()) {
+      beginKociembaSolve(solution, now = deps.now()) {
         const state = get();
-        if (!state.autoSolving) return;
-        set({ autoSolving: false, ...completionPatch(state, now) });
+        if (!canGiveUp(state) || !solvesCube(state, solution)) return [];
+        set(kociembaSolvePatch(state, solution, now));
+        return [...solution];
+      },
+
+      finishKociembaSolve() {
+        if (get().autoSolving) set(KOCIEMBA_DONE_PATCH);
       },
 
       dismissSolved() {
-        if (get().status === 'solved') set(DISMISS_PATCH);
+        const state = get();
+        if (state.status === 'solved') set(dismissPatch(state));
       },
     };
   };

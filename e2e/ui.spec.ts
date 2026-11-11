@@ -11,7 +11,7 @@ interface MoveLike {
 /** 頁面上 window.__cubie 的形狀（只列測試用到的部分；完整型別在 src/hooks/gameController.ts） */
 interface CubieDebug {
   store: { getState(): { cube: unknown; size: number; scrambleMoves: MoveLike[]; history: MoveLike[] } };
-  engine: { simulateUserMove(move: MoveLike): void } | null;
+  engine: { simulateUserMove(move: MoveLike): void; getState(): unknown } | null;
 }
 
 declare global {
@@ -46,9 +46,60 @@ async function solveByHand(page: Page) {
   return solution.length;
 }
 
-async function scramble(page: Page) {
-  await page.getByTestId('btn-scramble').click();
+/** 按「開始遊戲」，等打亂動畫播完 */
+async function startGame(page: Page) {
+  await page.getByTestId('btn-start').click();
   await expect(status(page)).toHaveText('ready', { timeout: 15_000 });
+}
+
+const KOCIEMBA_MESSAGE = /數學老師 Herbert Kociemba 用 \d+ 步幫你解完了/;
+
+/** 3×3 放棄：確認按鈕是「Kociemba」→ Kociemba 還原播完跳出完成畫面（不算新紀錄）→ 按「關閉」回到待機 */
+async function giveUpWithKociemba(page: Page) {
+  const button = page.getByTestId('btn-giveup');
+  await button.click();
+  await expect(button).toHaveText('Kociemba');
+  await button.click();
+  const modal = page.getByTestId('solved-modal');
+  await expect(modal).toBeVisible({ timeout: 30_000 });
+  await expect(status(page)).toHaveText('solved');
+  await expect(page.getByTestId('modal-message')).toHaveText(KOCIEMBA_MESSAGE);
+  await expect(modal).not.toContainText('新紀錄');
+  await expect(page.getByTestId('modal-time')).toHaveCount(0);
+  await expect(page.getByTestId('stat-best')).toHaveText('—');
+  await page.getByTestId('btn-close-modal').click();
+  await expect(modal).toBeHidden();
+  await expect(status(page)).toHaveText('idle');
+  await expect(page.getByTestId('btn-start')).toBeVisible();
+}
+
+/** 2×2、4×4 放棄：確認按鈕是「確定放棄？」→ 直接重設回待機，沒有完成畫面 */
+async function giveUpAndReset(page: Page) {
+  const button = page.getByTestId('btn-giveup');
+  await button.click();
+  await expect(button).toHaveText('確定放棄？');
+  await button.click();
+  await expect(status(page)).toHaveText('idle');
+  await expect(page.getByTestId('solved-modal')).toHaveCount(0);
+  await expect(page.getByTestId('btn-start')).toBeVisible();
+  await expect(page.getByTestId('stat-best')).toHaveText('—');
+}
+
+/** 尺寸切換是否鎖住 */
+async function expectSizeLocked(page: Page, locked: boolean) {
+  for (const size of [2, 3, 4]) {
+    const segment = page.getByTestId(`size-${size}`);
+    if (locked) await expect(segment).toBeDisabled();
+    else await expect(segment).toBeEnabled();
+  }
+  const group = page.getByRole('group', { name: '方塊尺寸' });
+  if (locked) {
+    await expect(group).toHaveAttribute('aria-disabled', 'true');
+    await expect(group).toHaveAttribute('title', '放棄這一局後才能切換尺寸');
+    await expect(group).toHaveAccessibleDescription('放棄這一局後才能切換尺寸');
+  } else {
+    await expect(group).not.toHaveAttribute('aria-disabled', 'true');
+  }
 }
 
 let consoleErrors: string[] = [];
@@ -70,14 +121,27 @@ test.describe('UI 流程', () => {
     await openApp(page);
   });
 
-  test('打亂 → 轉一步開始計時 → 上一步 → 自動還原跳出完成畫面', async ({ page }) => {
-    await expect(page.getByTestId('stat-time')).toHaveText('0:00.00');
-    await expect(page.getByTestId('btn-solve')).toBeDisabled();
+  test('待機時只有「開始遊戲」，可以自由轉動，沒有上一步和放棄', async ({ page }) => {
+    await expect(page.getByTestId('btn-start')).toBeEnabled();
+    await expect(page.getByTestId('btn-undo')).toHaveCount(0);
+    await expect(page.getByTestId('btn-giveup')).toHaveCount(0);
+    await expectSizeLocked(page, false);
 
-    await scramble(page);
+    await userMove(page, R);
+    await page.waitForTimeout(300);
+    await expect(status(page)).toHaveText('idle');
+    await expect(page.getByTestId('stat-moves')).toHaveText('0');
+    await expect(page.getByTestId('stat-time')).toHaveText('0:00.00');
+    await expect(page.getByTestId('btn-start')).toBeVisible();
+  });
+
+  test('開始遊戲 → 轉一步開始計時 → 上一步 → 放棄（按兩次）→ 完成畫面 → 關閉回到待機', async ({ page }) => {
+    await startGame(page);
     await expect(page.getByTestId('stat-time')).toHaveText('0:00.00');
     await expect(page.getByTestId('stat-moves')).toHaveText('0');
-    await expect(page.getByTestId('btn-solve')).toBeEnabled();
+    await expect(page.getByTestId('btn-start')).toHaveCount(0);
+    await expect(page.getByTestId('btn-undo')).toBeDisabled();
+    await expect(page.getByTestId('btn-giveup')).toBeEnabled();
 
     const before = await cubeSnapshot(page);
     await userMove(page, R);
@@ -90,32 +154,83 @@ test.describe('UI 流程', () => {
     expect(await cubeSnapshot(page)).toBe(before);
     await expect(page.getByTestId('btn-undo')).toBeDisabled();
 
-    await page.getByTestId('btn-solve').click();
-    const modal = page.getByTestId('solved-modal');
-    await expect(modal).toBeVisible({ timeout: 15_000 });
-    await expect(modal).toContainText('自動還原完成');
-    await expect(modal).not.toContainText('新紀錄');
-    await expect(status(page)).toHaveText('solved');
+    await userMove(page, R);
+    await giveUpWithKociemba(page);
+    await expect(page.getByTestId('stat-time')).toHaveText('0:00.00');
+    await expect(page.getByTestId('stat-moves')).toHaveText('0');
     await expect(page.getByTestId('stat-best')).toHaveText('—');
-
-    await page.getByTestId('btn-close-modal').click();
-    await expect(modal).toBeHidden();
-    await expect(status(page)).toHaveText('idle');
-    await expect(page.getByTestId('btn-solve')).toBeDisabled();
+    await expect(page.getByTestId('btn-start')).toBeEnabled();
+    const state = await page.evaluate(() => {
+      const s = window.__cubie!.store.getState();
+      return { history: s.history.length, scramble: s.scrambleMoves.length };
+    });
+    expect(state).toEqual({ history: 0, scramble: 0 });
+    expect(await cubeSnapshot(page)).toBe(await page.evaluate(() => JSON.stringify(window.__cubie!.engine!.getState())));
   });
 
-  test('打亂中三個按鈕都停用', async ({ page }) => {
-    await page.getByTestId('btn-scramble').click();
+  test('打亂中「上一步」「放棄」和尺寸切換都停用；遊戲中沒有開始按鈕', async ({ page }) => {
+    await page.getByTestId('btn-start').click();
     await expect(status(page)).toHaveText('scrambling');
-    for (const id of ['btn-scramble', 'btn-undo', 'btn-solve', 'size-2']) {
-      await expect(page.getByTestId(id)).toBeDisabled();
-    }
+    await expect(page.getByTestId('btn-start')).toHaveCount(0);
+    await expect(page.getByTestId('btn-undo')).toBeDisabled();
+    await expect(page.getByTestId('btn-giveup')).toBeDisabled();
+    await expectSizeLocked(page, true);
     await expect(status(page)).toHaveText('ready', { timeout: 15_000 });
-    await expect(page.getByTestId('btn-scramble')).toBeEnabled();
+    await expect(page.getByTestId('btn-giveup')).toBeEnabled();
+    await expect(page.getByTestId('btn-start')).toHaveCount(0);
   });
 
-  test('玩家自己解完：跳出完成畫面並刷新最佳紀錄，再玩一次會重新打亂', async ({ page }) => {
-    await scramble(page);
+  test('遊戲中尺寸切換被鎖住（按了沒反應）、主題仍可切換；放棄後恢復可用', async ({ page }) => {
+    await startGame(page);
+    await userMove(page, R);
+    await expectSizeLocked(page, true);
+    await page.getByTestId('size-2').click({ force: true });
+    await expect(page.getByTestId('size-3')).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => window.__cubie!.store.getState().size)).toBe(3);
+    await expect(status(page)).toHaveText('solving');
+    await expect(page.getByTestId('stat-moves')).toHaveText('1');
+
+    await page.getByTestId('theme-neon').click();
+    await expect(page.getByTestId('theme-neon')).toHaveAttribute('aria-pressed', 'true');
+    await expect(status(page)).toHaveText('solving');
+
+    await giveUpWithKociemba(page);
+    await expectSizeLocked(page, false);
+    await page.getByTestId('size-2').click();
+    await expect(page.getByTestId('size-2')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('放棄第一次按下不會立刻放棄，約 3 秒沒確認就恢復原狀', async ({ page }) => {
+    await startGame(page);
+    await userMove(page, R);
+    const button = page.getByTestId('btn-giveup');
+    await button.click();
+    await expect(button).toHaveText('Kociemba');
+    await expect(button).toHaveAttribute('aria-label', /確定放棄.*Kociemba/);
+    await expect(button).toHaveAttribute('data-armed', 'true');
+    await page.waitForTimeout(500);
+    await expect(status(page)).toHaveText('solving');
+    await expect(page.getByTestId('stat-moves')).toHaveText('1');
+
+    await expect(button).toHaveText('放棄', { timeout: 4_000 });
+    await expect(button).toHaveAttribute('aria-label', '放棄這一局');
+    await expect(status(page)).toHaveText('solving');
+  });
+
+  test('放棄第一次按下後，按了別的地方就恢復原狀', async ({ page }) => {
+    await startGame(page);
+    const button = page.getByTestId('btn-giveup');
+    await button.click();
+    await expect(button).toHaveText('Kociemba');
+    await page.getByTestId('stat-moves').click();
+    await expect(button).toHaveText('放棄');
+    // 恢復後要重新按兩次才會放棄
+    await button.click();
+    await expect(status(page)).toHaveText('ready');
+  });
+
+  test('玩家自己解完：跳出完成畫面並刷新最佳紀錄，再玩一次會直接開始下一局', async ({ page }) => {
+    await startGame(page);
     const moves = await solveByHand(page);
 
     const modal = page.getByTestId('solved-modal');
@@ -127,20 +242,83 @@ test.describe('UI 流程', () => {
 
     await page.getByTestId('btn-play-again').click();
     await expect(modal).toBeHidden();
+    await expect(page.getByTestId('btn-giveup')).toBeVisible();
     await expect(status(page)).toHaveText('ready', { timeout: 15_000 });
   });
 
-  test('切換 2×2、4×4 都能打亂和自動還原', async ({ page }) => {
+  test('放棄後的完成畫面按「再玩一次」直接開始下一局', async ({ page }) => {
+    await startGame(page);
+    await userMove(page, R);
+    const button = page.getByTestId('btn-giveup');
+    await button.click();
+    await button.click();
+    await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('modal-message')).toHaveText(KOCIEMBA_MESSAGE);
+    await page.getByTestId('btn-play-again').click();
+    await expect(page.getByTestId('solved-modal')).toBeHidden();
+    await expect(status(page)).toHaveText('ready', { timeout: 15_000 });
+    await expect(page.getByTestId('stat-moves')).toHaveText('0');
+  });
+
+  test('Kociemba 完成畫面裡的人名是另開新分頁的連結，而且點得到', async ({ page }) => {
+    await startGame(page);
+    await userMove(page, R);
+    const button = page.getByTestId('btn-giveup');
+    await button.click();
+    await button.click();
+    await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 30_000 });
+    const link = page.getByTestId('link-kociemba');
+    await expect(link).toHaveText('Herbert Kociemba');
+    await expect(link).toHaveAttribute('href', 'https://kociemba.org/');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // 點擊範圍夠大，而且連結中心點真的是連結本身（沒有被其他東西蓋住）
+    const box = (await link.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(28);
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.getAttribute('data-testid'), [box.x + box.width / 2, box.y + box.height / 2]);
+    expect(hit).toBe('link-kociemba');
+    expect(await link.evaluate((el) => getComputedStyle(el).pointerEvents)).not.toBe('none');
+  });
+
+  test('完成畫面按「關閉」回到待機，可以換尺寸', async ({ page }) => {
+    await startGame(page);
+    await solveByHand(page);
+    await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('btn-close-modal').click();
+    await expect(page.getByTestId('solved-modal')).toBeHidden();
+    await expect(status(page)).toHaveText('idle');
+    await expect(page.getByTestId('btn-start')).toBeEnabled();
+    await expectSizeLocked(page, false);
+  });
+
+  test('2×2、3×3、4×4 都能開始 → 轉幾步 → 放棄 → 回到完成狀態（3×3 經過 Kociemba 完成畫面，其他直接重設）', async ({ page }) => {
     test.slow(); // 4×4 打亂 40 步＋還原，機器忙的時候會超過預設的 60 秒
-    for (const size of [2, 4]) {
+    for (const size of [2, 3, 4]) {
       await page.getByTestId(`size-${size}`).click();
       await expect(page.getByTestId(`size-${size}`)).toHaveAttribute('aria-pressed', 'true');
       expect(await page.evaluate(() => window.__cubie!.store.getState().size)).toBe(size);
-      await scramble(page);
-      await page.getByTestId('btn-solve').click();
-      await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('btn-close-modal').click();
+      await startGame(page);
+      const outer = (size - 1) / 2;
+      await userMove(page, { axis: 'y', layer: outer, dir: -1 });
+      await userMove(page, { axis: 'z', layer: outer, dir: -1 });
+      await expect(page.getByTestId('stat-moves')).toHaveText('2');
+      if (size === 3) await giveUpWithKociemba(page);
+      else await giveUpAndReset(page);
+      await expect(page.getByTestId('stat-moves')).toHaveText('0');
+      await expect(page.getByTestId('stat-time')).toHaveText('0:00.00');
+      expect(await cubeSnapshot(page)).toBe(await page.evaluate(() => JSON.stringify(window.__cubie!.engine!.getState())));
+      await expectSizeLocked(page, false);
     }
+  });
+
+  test('重新整理後回到待機', async ({ page }) => {
+    await startGame(page);
+    await userMove(page, R);
+    await page.reload();
+    await page.waitForFunction(() => window.__cubie?.engine != null);
+    await expect(status(page)).toHaveText('idle');
+    await expect(page.getByTestId('btn-start')).toBeVisible();
+    await expect(page.getByTestId('stat-moves')).toHaveText('0');
   });
 
   test('切換主題後重新整理仍記得，尺寸也記得', async ({ page }) => {
@@ -167,10 +345,15 @@ test.describe('UI 流程', () => {
     }));
     expect(overflow.scrollW).toBeLessThanOrEqual(0);
     expect(overflow.scrollH).toBeLessThanOrEqual(0);
-    for (const button of await page.locator('button').all()) {
-      const box = await button.boundingBox();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
-    }
+    const checkHeights = async () => {
+      for (const button of await page.locator('button').all()) {
+        const box = await button.boundingBox();
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+    };
+    await checkHeights();
+    await startGame(page);
+    await checkHeights();
   });
 });
 
@@ -190,13 +373,11 @@ test.describe('截圖', () => {
       await openApp(page);
       for (const theme of ['classic', 'brand', 'neon']) {
         await page.getByTestId(`theme-${theme}`).click();
-        await scramble(page);
+        await startGame(page);
         await userMove(page, R);
         await page.waitForTimeout(600);
         await page.screenshot({ path: `screenshots/ui/${theme}-${vp.name}.png` });
-        // 經典：玩家自己解完（新紀錄）；其他：自動還原
-        if (theme === 'classic') await solveByHand(page);
-        else await page.getByTestId('btn-solve').click();
+        await solveByHand(page);
         await expect(page.getByTestId('solved-modal')).toBeVisible({ timeout: 15_000 });
         await page.waitForTimeout(400);
         if (theme !== 'brand') await page.screenshot({ path: `screenshots/ui/modal-${theme}-${vp.name}.png` });

@@ -139,12 +139,32 @@ button {
   cursor: default;
 }
 
+/* 鎖住的分段選擇器（一局進行中的尺寸切換）：整組變淡，選中的那格也一起淡掉 */
+.segmented[aria-disabled='true'] {
+  opacity: 0.5;
+}
+
+.segment[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/* 「放棄」第一次按下後：紅色警示，提醒再按一次就會放棄 */
+.btn-danger {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+}
+
 @media (hover: hover) {
   .btn-primary:not(:disabled):hover {
     background: var(--indigo-hover);
   }
+  .btn-danger:not(:disabled):hover {
+    background: #b91c1c;
+  }
   .btn.glass:not(:disabled):hover,
-  .segment[aria-pressed='false']:not(:disabled):hover {
+  .segment[aria-pressed='false']:not(:disabled, [aria-disabled='true']):hover {
     background: color-mix(in srgb, var(--indigo) 12%, transparent);
   }
 }
@@ -181,6 +201,17 @@ button {
 .toolbar {
   display: flex;
   gap: 10px;
+}
+
+/* 遊戲中「上一步」「放棄」兩顆等寬（「確定放棄？」字比較多，寬度也不會跳動） */
+.toolbar .btn {
+  flex: 1 1 0;
+  min-width: 112px;
+}
+
+/* 待機時唯一的主要按鈕，桌機上做大一點 */
+.toolbar .btn-start {
+  min-width: 168px;
 }
 
 /* ===== 方塊舞台 ===== */
@@ -309,6 +340,12 @@ button {
     flex: 1 1 auto;
   }
 
+  /* 390 寬時尺寸＋主題放同一列會多出幾 px，主題選項的左右留白縮小一點（每格仍至少 44px 寬） */
+  .theme-switcher .segment {
+    min-width: 44px;
+    padding: 0 6px;
+  }
+
   .stats {
     justify-content: space-around;
     padding: 8px 16px;
@@ -322,10 +359,16 @@ button {
     font-size: 20px;
   }
 
+  /* 待機時「開始遊戲」佔滿整列；遊戲中「上一步」「放棄」兩顆等寬 */
   .toolbar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     justify-self: stretch;
+  }
+
+  .toolbar .btn {
+    min-width: 0;
   }
 
   .btn {
@@ -416,9 +459,14 @@ button {
 
   .toolbar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 6px;
     justify-self: stretch;
+  }
+
+  .toolbar .btn {
+    min-width: 0;
   }
 
   .btn {
@@ -456,6 +504,85 @@ button {
   font-weight: 700;
 }
 
+/* 3×3 放棄後 Kociemba 解完的那句話：字比較多，縮小字級、行距放寬，窄螢幕斷成兩三行也好讀 */
+.modal-title-message {
+  margin: 4px 0 24px;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-wrap: balance;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* 彈窗裡的連結（Herbert Kociemba）：Indigo＋底線看得出是連結；上下留一點 padding 讓點擊範圍大一點 */
+.modal-link {
+  display: inline-block;
+  padding: 4px 2px;
+  margin: -4px 0;
+  color: var(--indigo);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+:root[data-ui='dark'] .modal-link {
+  color: var(--indigo-ring);
+}
+
+.modal-link:focus-visible {
+  outline: 2px solid var(--indigo-ring);
+  outline-offset: 2px;
+}
+
+.modal-steps {
+  color: var(--indigo);
+  font-size: 1.25em;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ui='dark'] .nowrap {
+  white-space: nowrap;
+}
+
+/* 彈窗裡的連結（Herbert Kociemba）：Indigo＋底線看得出是連結；上下留一點 padding 讓點擊範圍大一點 */
+.modal-link {
+  display: inline-block;
+  padding: 4px 2px;
+  margin: -4px 0;
+  color: var(--indigo);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+:root[data-ui='dark'] .modal-link {
+  color: var(--indigo-ring);
+}
+
+.modal-link:focus-visible {
+  outline: 2px solid var(--indigo-ring);
+  outline-offset: 2px;
+}
+
+.modal-steps {
+  color: var(--indigo-ring);
+}
+
 .new-best {
   display: inline-block;
   margin: 10px 0 0;
@@ -465,12 +592,6 @@ button {
   color: #fff;
   font-size: 14px;
   font-weight: 600;
-}
-
-.modal-note {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 .results {

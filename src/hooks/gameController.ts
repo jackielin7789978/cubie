@@ -1,19 +1,19 @@
 // 把遊戲 store 和 3D engine 接起來的控制器。這個檔案是一般的 TypeScript class，不依賴 React，
 // React 元件透過 useGameController() 取得同一個實例。
 import type { StoreApi } from 'zustand';
-import { createSolvedState, isSolved, reverseSolve } from '../core';
+import { createSolvedState } from '../core';
 import type { CubeSize, CubeState, Move } from '../core/types';
 import { MOVE_DURATION } from '../engine/types';
 import type { CubeEngine } from '../engine/types';
-import { isLocked } from '../store/gameRules';
+import { canGiveUp, isInGame, isLocked } from '../store/gameRules';
 import type { GameStore } from '../store/types';
 import type { UiStore } from '../store/useUiStore';
 import { THEMES } from '../themes';
 import type { ThemeId } from '../themes/types';
 
 /**
- * 外部解法器（例如 3×3 Kociemba）。回傳 null 代表「這個狀態我不處理」，
- * 這時改用 store 預設的反轉歷史。
+ * 外部解法器（3×3 Kociemba）。回傳 null 代表「這個狀態我不處理」（例如 2×2、4×4），
+ * 這時放棄就直接重設方塊。
  */
 export type SolutionProvider = (state: CubeState) => Promise<Move[]> | null;
 
@@ -27,7 +27,7 @@ declare global {
 export class GameController {
   private engine: CubeEngine | null = null;
   private unsubscribers: Array<() => void> = [];
-  /** 每次打亂、換尺寸、自動還原都 +1；非同步流程結束時比對，過期的就不再改狀態 */
+  /** 每次開始遊戲、換尺寸、放棄都 +1；非同步流程結束時比對，過期的就不再改狀態 */
   private round = 0;
   private solutionProvider: SolutionProvider | null = null;
   private readonly game: StoreApi<GameStore>;
@@ -70,8 +70,9 @@ export class GameController {
     void this.openModalWhenSolved();
   };
 
-  async scramble(): Promise<void> {
-    const moves = this.game.getState().beginScramble();
+  /** 開始遊戲：重設方塊、播打亂動畫，播完進入 ready */
+  async startGame(): Promise<void> {
+    const moves = this.game.getState().startGame();
     if (moves.length === 0) return;
     const round = ++this.round;
     this.ui.getState().closeSolvedModal();
@@ -89,21 +90,25 @@ export class GameController {
     void this.openModalWhenSolved();
   }
 
-  async autoSolve(): Promise<void> {
-    const state = this.game.getState();
-    if (this.ui.getState().computingSolution || isLocked(state) || isSolved(state.cube)) return;
+  /**
+   * 放棄這一局。3×3：請 Kociemba 解法器算解、播還原動畫，播完打開完成畫面（不列入紀錄）。
+   * 2×2、4×4（沒有解法器），或解法器失敗、逾時：直接把方塊重設成完成狀態、回到待機。
+   */
+  async giveUp(): Promise<void> {
+    if (this.ui.getState().computingSolution || !canGiveUp(this.game.getState())) return;
     const round = ++this.round;
     const solution = await this.computeSolution(this.game.getState().cube);
     if (round !== this.round) return;
-    const moves = this.game.getState().beginAutoSolve(this.pickShorter(solution));
-    if (moves.length === 0) return;
+    const moves = solution ? this.game.getState().beginKociembaSolve(solution) : [];
+    if (moves.length === 0) return this.abandon();
     await this.engine?.enqueueMoves(moves, { durationMs: MOVE_DURATION.solve });
-    this.game.getState().finishAutoSolve();
+    this.game.getState().finishKociembaSolve();
     if (round === this.round && this.game.getState().status === 'solved') this.ui.getState().openSolvedModal();
   }
 
+  /** 換尺寸：一局進行中不能換（要先放棄） */
   setSize(size: CubeSize): void {
-    if (isLocked(this.game.getState())) return;
+    if (isInGame(this.game.getState()) || isLocked(this.game.getState())) return;
     this.round++;
     this.ui.getState().closeSolvedModal();
     this.game.getState().setSize(size);
@@ -118,9 +123,16 @@ export class GameController {
     this.game.getState().dismissSolved();
   }
 
+  /** 完成畫面的「再玩一次」：直接開始下一局 */
   playAgain(): void {
     this.closeSolvedModal();
-    void this.scramble();
+    void this.startGame();
+  }
+
+  /** 直接放棄：邏輯和畫面一起重設成完成狀態（沒有動畫） */
+  private abandon(): void {
+    this.game.getState().abandonGame();
+    this.engine?.setState(this.game.getState().cube);
   }
 
   /** 玩家轉完剛好完成：等最後一步的動畫播完再打開完成畫面 */
@@ -131,22 +143,14 @@ export class GameController {
     if (round === this.round && this.game.getState().status === 'solved') this.ui.getState().openSolvedModal();
   }
 
-  /** 外部解法和反轉歷史取比較短的那個（只轉了幾步時，直接倒著轉回去比較快也比較直覺） */
-  private pickShorter(solution: Move[] | null): Move[] | undefined {
-    if (!solution) return undefined;
-    const { scrambleMoves, history } = this.game.getState();
-    const reversed = reverseSolve([...scrambleMoves, ...history]);
-    return solution.length < reversed.length ? solution : undefined;
-  }
-
-  /** 問外部解法器要解法；沒有解法器、不處理這個狀態或出錯都回傳 null */
+  /** 問外部解法器要解法；沒有解法器、不處理這個狀態、出錯或逾時都回傳 null */
   private async computeSolution(cube: CubeState): Promise<Move[] | null> {
     if (!this.solutionProvider) return null;
     this.ui.getState().setComputingSolution(true);
     try {
       return (await this.solutionProvider(cube)) ?? null;
     } catch (error) {
-      console.warn('外部解法器失敗，改用反轉歷史', error);
+      console.warn('外部解法器失敗，改成直接重設', error);
       return null;
     } finally {
       this.ui.getState().setComputingSolution(false);
@@ -160,7 +164,7 @@ export class GameController {
     if (isLocked(state) !== isLocked(prev)) this.syncInput();
   }
 
-  /** 打亂、自動還原、等解法或完成畫面打開時關掉玩家輸入（仍然可以旋轉視角） */
+  /** 打亂、Kociemba 還原動畫、等解法或完成畫面打開時關掉玩家輸入（仍然可以旋轉視角） */
   private syncInput(): void {
     const ui = this.ui.getState();
     const busy = isLocked(this.game.getState()) || ui.computingSolution || ui.solvedModalOpen;

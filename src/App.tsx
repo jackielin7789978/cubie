@@ -11,7 +11,7 @@ import { useGameStore } from './store/useGameStore';
 import { THEMES } from './themes';
 
 interface AppProps {
-  /** 外部解法器（例如 3×3 Kociemba）；沒有時自動還原用反轉歷史 */
+  /** 外部解法器（3×3 Kociemba）；沒有解法時「放棄」直接重設方塊 */
   solutionProvider?: SolutionProvider | null;
 }
 

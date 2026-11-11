@@ -37,9 +37,9 @@ function setup() {
 }
 
 describe('GameController', () => {
-  it('打亂：先把畫面設成完成狀態，播完打亂序列後變成 ready；打亂中關掉輸入', async () => {
+  it('開始遊戲：先把畫面設成完成狀態，播完打亂序列後變成 ready；打亂中關掉輸入', async () => {
     const { game, controller, calls } = setup();
-    await controller.scramble();
+    await controller.startGame();
     expect(calls.states.at(-1)?.size).toBe(3);
     expect(calls.enqueued).toEqual([SCRAMBLE]);
     expect(calls.input).toContain(false);
@@ -47,63 +47,164 @@ describe('GameController', () => {
     expect(game.getState().status).toBe('ready');
   });
 
+  it('一局進行中再按開始遊戲不會重新打亂', async () => {
+    const { controller, calls } = setup();
+    await controller.startGame();
+    controller.handleUserMove(R);
+    await controller.startGame();
+    expect(calls.enqueued).toEqual([SCRAMBLE]);
+  });
+
+  it('待機時可以自由轉動，不會打開完成畫面', async () => {
+    const { game, ui, controller } = setup();
+    controller.handleUserMove(R);
+    controller.handleUserMove({ ...R, dir: 1 });
+    await Promise.resolve();
+    expect(game.getState().status).toBe('idle');
+    expect(game.getState().moveCount).toBe(0);
+    expect(ui.getState().solvedModalOpen).toBe(false);
+  });
+
   it('玩家轉完：等動畫播完才打開完成畫面', async () => {
     const { ui, controller } = setup();
-    await controller.scramble();
+    await controller.startGame();
     for (const move of invertMoves(SCRAMBLE)) controller.handleUserMove(move);
     expect(ui.getState().solvedModalOpen).toBe(false);
     await vi.waitFor(() => expect(ui.getState().solvedModalOpen).toBe(true));
   });
 
+  it('再玩一次：關掉完成畫面並直接開始下一局', async () => {
+    const { game, ui, controller, calls } = setup();
+    await controller.startGame();
+    for (const move of invertMoves(SCRAMBLE)) controller.handleUserMove(move);
+    await vi.waitFor(() => expect(ui.getState().solvedModalOpen).toBe(true));
+    controller.playAgain();
+    expect(ui.getState().solvedModalOpen).toBe(false);
+    await vi.waitFor(() => expect(game.getState().status).toBe('ready'));
+    expect(calls.enqueued.at(-1)).toEqual(SCRAMBLE);
+  });
+
   it('上一步：把反向轉動交給 engine', async () => {
     const { controller, calls } = setup();
-    await controller.scramble();
+    await controller.startGame();
     controller.handleUserMove(R);
     controller.undo();
     expect(calls.enqueued.at(-1)).toEqual([{ ...R, dir: 1 }]);
   });
 
-  it('自動還原：有外部解法就用它，播完打開完成畫面', async () => {
+  it('3×3 放棄：用 Kociemba 的解播動畫，播完打開完成畫面，不列入紀錄', async () => {
     const { game, ui, controller, calls } = setup();
     const solution = invertMoves(SCRAMBLE);
     const provider = vi.fn(() => Promise.resolve(solution));
     controller.setSolutionProvider(provider);
-    await controller.scramble();
-    await controller.autoSolve();
+    await controller.startGame();
+    await controller.giveUp();
     expect(provider).toHaveBeenCalledOnce();
     expect(calls.enqueued.at(-1)).toEqual(solution);
     expect(game.getState().status).toBe('solved');
+    expect(game.getState().kociembaSteps).toBe(2);
+    expect(game.getState().bestRecords[3]).toBeNull();
     expect(ui.getState().solvedModalOpen).toBe(true);
     expect(ui.getState().computingSolution).toBe(false);
   });
 
-  it('外部解法失敗或回傳 null：改用反轉歷史', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const failing = setup();
-    failing.controller.setSolutionProvider(() => Promise.reject(new Error('boom')));
-    await failing.controller.scramble();
-    await failing.controller.autoSolve();
-    expect(failing.calls.enqueued.at(-1)).toEqual(invertMoves(SCRAMBLE));
+  it('Kociemba 的解比打亂還長也照樣用它', async () => {
+    const { controller, calls } = setup();
+    const longer = [...invertMoves(SCRAMBLE), R, R, R, R];
+    controller.setSolutionProvider(() => Promise.resolve(longer));
+    await controller.startGame();
+    await controller.giveUp();
+    expect(calls.enqueued.at(-1)).toEqual(longer);
+  });
 
-    const declining = setup();
-    declining.controller.setSolutionProvider(() => null);
-    await declining.controller.scramble();
-    await declining.controller.autoSolve();
-    expect(declining.calls.enqueued.at(-1)).toEqual(invertMoves(SCRAMBLE));
+  it('Kociemba 還原動畫和完成畫面期間關掉玩家輸入，關掉完成畫面回到 idle 再打開', async () => {
+    const { game, ui, controller, calls } = setup();
+    // 假的 Kociemba：把打亂和玩家轉動倒過來
+    controller.setSolutionProvider(() => {
+      const { scrambleMoves, history } = game.getState();
+      return Promise.resolve(invertMoves([...scrambleMoves, ...history]));
+    });
+    await controller.startGame();
+    controller.handleUserMove(R);
+    calls.input.length = 0;
+    await controller.giveUp();
+    expect(calls.input).toContain(false);
+    expect(calls.input.at(-1)).toBe(false);
+    controller.closeSolvedModal();
+    expect(ui.getState().solvedModalOpen).toBe(false);
+    expect(game.getState().status).toBe('idle');
+    expect(game.getState().moveCount).toBe(0);
+    expect(calls.input.at(-1)).toBe(true);
+  });
+
+  /** 斷言「直接重設」：沒有播動畫、畫面設成完成狀態、回到 idle、沒有完成畫面 */
+  function expectAbandoned(ctx: ReturnType<typeof setup>, enqueuedBefore: number) {
+    expect(ctx.calls.enqueued.length).toBe(enqueuedBefore);
+    expect(ctx.calls.states.at(-1)).toEqual(ctx.game.getState().cube);
+    expect(ctx.game.getState().status).toBe('idle');
+    expect(ctx.game.getState().moveCount).toBe(0);
+    expect(ctx.ui.getState().solvedModalOpen).toBe(false);
+    expect(ctx.game.getState().bestRecords[3]).toBeNull();
+  }
+
+  it('沒有解法器（2×2、4×4）：直接重設，不播動畫、不跳完成畫面', async () => {
+    const ctx = setup();
+    ctx.controller.setSolutionProvider(() => null);
+    await ctx.controller.startGame();
+    ctx.controller.handleUserMove(R);
+    const enqueued = ctx.calls.enqueued.length;
+    await ctx.controller.giveUp();
+    expectAbandoned(ctx, enqueued);
+  });
+
+  it('3×3 解法器失敗、逾時或給錯的解：改成直接重設', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const providers = [() => Promise.reject(new Error('逾時')), () => Promise.resolve([R])];
+    for (const provider of providers) {
+      const ctx = setup();
+      ctx.controller.setSolutionProvider(provider);
+      await ctx.controller.startGame();
+      const enqueued = ctx.calls.enqueued.length;
+      await ctx.controller.giveUp();
+      expectAbandoned(ctx, enqueued);
+      expect(ctx.ui.getState().computingSolution).toBe(false);
+    }
     warn.mockRestore();
   });
 
-  it('已經是完成狀態時自動還原不做事', async () => {
+  it('待機時放棄不做事', async () => {
     const { controller, calls } = setup();
-    await controller.autoSolve();
+    controller.handleUserMove(R);
+    await controller.giveUp();
     expect(calls.enqueued).toEqual([]);
   });
 
-  it('換尺寸會通知 engine，關掉完成畫面', () => {
+  it('待機時換尺寸會通知 engine，關掉完成畫面', () => {
     const { ui, controller, calls } = setup();
     ui.getState().openSolvedModal();
     controller.setSize(4);
     expect(calls.sizes).toEqual([4]);
     expect(ui.getState().solvedModalOpen).toBe(false);
+  });
+
+  it('一局進行中換尺寸被拒絕；放棄之後才可以換', async () => {
+    const { game, controller, calls } = setup();
+    await controller.startGame();
+    controller.handleUserMove(R);
+    controller.setSize(2);
+    expect(game.getState().size).toBe(3);
+    expect(calls.sizes).toEqual([]);
+    await controller.giveUp(); // 沒有解法器：直接重設回 idle
+    controller.setSize(2);
+    expect(game.getState().size).toBe(2);
+    expect(game.getState().status).toBe('idle');
+    expect(calls.sizes).toEqual([2]);
+  });
+
+  it('一局進行中可以換主題', async () => {
+    const { game, controller } = setup();
+    await controller.startGame();
+    controller.setTheme('neon');
+    expect(game.getState().themeId).toBe('neon');
   });
 });

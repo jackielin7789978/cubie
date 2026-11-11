@@ -6,8 +6,8 @@ import { useUiStore } from '../store/useUiStore';
 import { formatTime } from './formatTime';
 
 /** 彩帶：從左右兩邊各噴一次。系統設定「減少動態效果」時不播。 */
-function celebrate(big: boolean): void {
-  const base = { particleCount: big ? 90 : 45, spread: 70, startVelocity: 45, disableForReducedMotion: true, zIndex: 30 };
+function celebrate(): void {
+  const base = { particleCount: 90, spread: 70, startVelocity: 45, disableForReducedMotion: true, zIndex: 30 };
   void confetti({ ...base, angle: 60, origin: { x: 0, y: 0.75 } });
   void confetti({ ...base, angle: 120, origin: { x: 1, y: 0.75 } });
 }
@@ -23,18 +23,51 @@ function ResultLine({ label, value, testId }: { label: string; value: string; te
   );
 }
 
-/** 完成慶祝畫面 */
+/** 3×3 放棄後的文案：Kociemba 用了幾步 */
+function KociembaMessage({ steps }: { steps: number }) {
+  // 人名是連到 Kociemba 個人網站的連結（另開新分頁）；不要從中間斷行（窄螢幕會斷成「Herbert／Kociemba」）
+  return (
+    <>
+      數學老師{' '}
+      <a
+        className="modal-link nowrap"
+        href="https://kociemba.org/"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="link-kociemba"
+      >
+        Herbert Kociemba
+      </a>{' '}
+      用 <strong className="modal-steps">{steps}</strong> 步幫你解完了
+    </>
+  );
+}
+
+/** 玩家自己解完的成績 */
+function Results({ finalTimeMs, moveCount }: { finalTimeMs: number | null; moveCount: number }) {
+  return (
+    <div className="results">
+      <ResultLine label="時間" value={finalTimeMs === null ? '—' : formatTime(finalTimeMs)} testId="modal-time" />
+      <ResultLine label="步數" value={String(moveCount)} testId="modal-moves" />
+    </div>
+  );
+}
+
+/**
+ * 完成慶祝畫面。玩家自己解完：顯示成績和新紀錄；
+ * 3×3 放棄、Kociemba 還原播完：一樣放彩帶，但只顯示 Kociemba 用幾步解完（不算玩家的成績）。
+ */
 export function SolvedModal({ controller }: { controller: GameController }) {
   const open = useUiStore((s) => s.solvedModalOpen);
   const finalTimeMs = useGameStore((s) => s.finalTimeMs);
   const moveCount = useGameStore((s) => s.moveCount);
-  const usedAutoSolve = useGameStore((s) => s.usedAutoSolve);
   const isNewBest = useGameStore((s) => s.isNewBest);
+  const kociembaSteps = useGameStore((s) => s.kociembaSteps);
   const playAgainRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    celebrate(!usedAutoSolve);
+    celebrate();
     playAgainRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') controller.closeSolvedModal();
@@ -44,20 +77,23 @@ export function SolvedModal({ controller }: { controller: GameController }) {
       window.removeEventListener('keydown', onKey);
       confetti.reset(); // 關掉完成畫面時把還在飄的彩帶清掉
     };
-  }, [open, usedAutoSolve, controller]);
+  }, [open, controller]);
 
   if (!open) return null;
-  const title = usedAutoSolve ? '自動還原完成' : '完成！';
   return (
     <div className="modal-backdrop">
       <div className="modal glass" role="dialog" aria-modal="true" aria-labelledby="solved-title" data-testid="solved-modal">
-        <h2 id="solved-title" className="modal-title">{title}</h2>
-        {isNewBest && <p className="new-best">新紀錄！</p>}
-        {usedAutoSolve && <p className="modal-note">使用自動還原，這局不列入最佳紀錄</p>}
-        <div className="results">
-          <ResultLine label="時間" value={finalTimeMs === null ? '—' : formatTime(finalTimeMs)} testId="modal-time" />
-          <ResultLine label="步數" value={String(moveCount)} testId="modal-moves" />
-        </div>
+        {kociembaSteps !== null ? (
+          <h2 id="solved-title" className="modal-title modal-title-message" data-testid="modal-message">
+            <KociembaMessage steps={kociembaSteps} />
+          </h2>
+        ) : (
+          <>
+            <h2 id="solved-title" className="modal-title">完成！</h2>
+            {isNewBest && <p className="new-best">新紀錄！</p>}
+            <Results finalTimeMs={finalTimeMs} moveCount={moveCount} />
+          </>
+        )}
         <div className="modal-actions">
           <button ref={playAgainRef} type="button" className="btn btn-primary" data-testid="btn-play-again" onClick={() => controller.playAgain()}>
             再玩一次
