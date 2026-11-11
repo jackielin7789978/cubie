@@ -9,9 +9,11 @@ import type { Theme } from '../themes/types';
 import type { CubeRenderer, PostProcess } from './CubeRenderer';
 
 // 第 0 階段預覽用的是 three r170（radius 0.5）。r187 的 UnrealBloomPass 模糊核加大（three.js PR #31528），
-// 同樣參數光暈會明顯變強、貼紙被洗白。實際截圖比對後，用 radius 0.3、強度 ×0.7 最接近 Jackie 看過的預覽。
-const BLOOM_RADIUS = 0.3;
-const BLOOM_STRENGTH_SCALE = 0.7;
+// 同樣參數光暈會明顯變強、貼紙被洗白。整合後在 1440×900 和預覽 N1（放大到同尺寸）逐點取色比對：
+// radius 0 讓最大那幾層模糊的權重最低，整片背景的灰霧最淡（手機直式方塊區和下方面板才不會有明顯接縫）；
+// 強度 ×0.45 時綠、紅貼紙中心約 #22FFA3、#FF476C，和預覽的 #32FF97、#FF5A6B 最接近，看得出原本的顏色。
+const BLOOM_RADIUS = 0;
+const BLOOM_STRENGTH_SCALE = 0.45;
 const BLOOM_THRESHOLD = 0.1;
 const DEFAULT_BLOOM_STRENGTH = 0.3;
 /** bloom 的 render target 很吃效能，開啟時 pixelRatio 上限降到 1.5 */

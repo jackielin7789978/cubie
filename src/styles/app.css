@@ -331,6 +331,24 @@ button {
   .btn {
     padding: 0 8px;
   }
+
+  /* 賽博龐克的 bloom 會在畫布上留一層淡淡的光暈，底部 40px 淡出，和下方面板之間才不會有一條接縫 */
+  .cube-canvas {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+  }
+}
+
+/* 手機直式、比 390 窄（例如 320、360、375）：尺寸和主題切換放不進同一列，改成各佔一列、按鈕等寬 */
+@media (orientation: portrait) and (max-width: 389px) {
+  .switchers {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .switchers .segmented {
+    display: flex;
+  }
 }
 
 /* ===== 手機橫式：左邊方塊，右側欄 ===== */
