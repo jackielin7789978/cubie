@@ -7,6 +7,8 @@ import type { FaceHit, Projector } from './gesture';
 /** InputController 需要外部提供的能力 */
 export interface InputTarget {
   canvas: HTMLCanvasElement;
+  /** 是否監聽鍵盤（只給測試和開發頁用） */
+  keyboard: boolean;
   pickFace(clientX: number, clientY: number): FaceHit | null;
   project: Projector;
   cubeSize(): number;
@@ -47,7 +49,7 @@ export class InputController {
     canvas.addEventListener('pointerup', this.onPointerEnd);
     canvas.addEventListener('pointercancel', this.onPointerEnd);
     canvas.addEventListener('lostpointercapture', this.onPointerEnd);
-    window.addEventListener('keydown', this.onKeyDown);
+    if (target.keyboard) window.addEventListener('keydown', this.onKeyDown);
   }
 
   setEnabled(enabled: boolean): void {

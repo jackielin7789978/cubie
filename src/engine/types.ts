@@ -14,6 +14,11 @@ export interface CubeEngineOptions {
    * engine 會自己播放動畫，外部只需要更新遊戲邏輯。
    */
   onUserMove?: (move: Move) => void;
+  /**
+   * 是否開啟鍵盤轉動（U D L R F B，加 Shift 逆時針）。預設關閉：
+   * 鍵盤目前只給自動化測試和開發頁使用，還沒有設計成玩家功能。
+   */
+  keyboard?: boolean;
 }
 
 export interface EnqueueOptions {
@@ -35,7 +40,7 @@ export interface CubeEngine {
   whenIdle(): Promise<void>;
   /** 是否正在播動畫或佇列裡還有轉動 */
   isBusy(): boolean;
-  /** 開關玩家輸入（拖曳轉層、鍵盤）。關掉時仍然可以旋轉視角。 */
+  /** 開關玩家輸入（拖曳轉層，以及有開啟時的鍵盤）。關掉時仍然可以旋轉視角。 */
   setInputEnabled(enabled: boolean): void;
   /** 把視角轉回預設角度 */
   resetView(): void;

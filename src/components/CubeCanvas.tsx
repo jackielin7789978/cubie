@@ -32,7 +32,9 @@ export function CubeCanvas({ controller }: { controller: GameController }) {
       .then((create) => {
         if (cancelled) return;
         const { size, themeId } = useGameStore.getState();
-        engine = create({ container, size, theme: THEMES[themeId], onUserMove: controller.handleUserMove });
+        // 鍵盤轉動只給自動化測試用（網址帶 ?testKeys 才開），一般玩家用拖曳操作
+        const keyboard = new URLSearchParams(window.location.search).has('testKeys');
+        engine = create({ container, size, theme: THEMES[themeId], onUserMove: controller.handleUserMove, keyboard });
         controller.attachEngine(engine);
       })
       .catch((error: unknown) => {

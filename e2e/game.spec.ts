@@ -28,7 +28,7 @@ async function openGame(page: Page): Promise<string[]> {
     if (msg.type() === 'error') errors.push(msg.text());
   });
   page.on('pageerror', (err) => errors.push(err.message));
-  await page.goto('./');
+  await page.goto('./?testKeys');
   await page.waitForFunction(() => Boolean((window as unknown as { __cubie?: { engine?: unknown } }).__cubie?.engine));
   return errors;
 }
@@ -290,4 +290,14 @@ test('在方塊上觸控拖曳會轉動一層，頁面不會捲動', async ({ pa
   expect(await page.evaluate(() => [window.scrollX, window.scrollY, document.documentElement.scrollTop])).toEqual([0, 0, 0]);
   const touchAction = await page.locator('[data-testid="cube-canvas"] canvas').evaluate((c) => getComputedStyle(c).touchAction);
   expect(touchAction).toBe('none');
+});
+
+test('一般玩家的網址不開放鍵盤轉動', async ({ page }) => {
+  await page.goto('./');
+  await page.waitForFunction(() => Boolean((window as unknown as { __cubie?: { engine?: unknown } }).__cubie?.engine));
+  const before = await logicalKey(page);
+  await page.keyboard.press('r');
+  await page.keyboard.press('Shift+U');
+  await page.waitForTimeout(400);
+  expect(await logicalKey(page)).toBe(before);
 });

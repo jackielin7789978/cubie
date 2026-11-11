@@ -41,6 +41,7 @@ class Engine implements CubeEngine, CubeEngineDebug {
     this.renderer.setFrameHandler(this.onFrame);
     this.input = new InputController({
       canvas: this.renderer.canvas,
+      keyboard: options.keyboard ?? false,
       pickFace: (x, y) => this.renderer.pickFace(x, y),
       project: this.renderer.projectToScreen,
       cubeSize: () => this.renderer.model.size,

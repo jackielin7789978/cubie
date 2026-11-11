@@ -34,6 +34,7 @@ function create(): CubeEngine & CubeEngineDebug {
     size,
     theme: THEMES[themeId] ?? THEMES.classic,
     onUserMove: (move) => window.__userMoves.push(move),
+    keyboard: true,
   }) as CubeEngine & CubeEngineDebug;
 }
 

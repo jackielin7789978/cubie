@@ -39,7 +39,7 @@ const onlyProject = (testInfo: TestInfo, name: string) => test.skip(testInfo.pro
 
 async function openGame(page: Page, viewport: ViewportName): Promise<void> {
   await page.setViewportSize(VIEWPORTS[viewport]);
-  await page.goto('./');
+  await page.goto('./?testKeys');
   await page.waitForFunction(() => Boolean((window as unknown as { __cubie?: { engine?: unknown } }).__cubie?.engine));
   await page.evaluate(() => document.fonts.ready);
 }
@@ -192,7 +192,7 @@ for (const viewport of [
   test(`窄直式 ${viewport.width}×${viewport.height} 不溢出`, async ({ page }, testInfo) => {
     onlyProject(testInfo, 'desktop');
     await page.setViewportSize(viewport);
-    await page.goto('./');
+    await page.goto('./?testKeys');
     await page.waitForFunction(() => Boolean((window as unknown as { __cubie?: { engine?: unknown } }).__cubie?.engine));
     await page.evaluate(() => document.fonts.ready);
     await expectNoOverflow(page);
