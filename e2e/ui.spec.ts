@@ -432,6 +432,67 @@ test.describe('UI 流程', () => {
   });
 });
 
+/** 所有浮層元件都在視窗裡、彼此不重疊，「放棄」按得到；按鈕和切換格至少 44×44 */
+async function expectLayoutFits(page: Page) {
+  const problems = await page.evaluate(() => {
+    const out: string[] = [];
+    const inView = (r: DOMRect) => r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('.title, .switchers, .segmented, .segment, .stats, .toolbar, .btn'))) {
+      const r = el.getBoundingClientRect();
+      if (!inView(r)) out.push(`超出畫面：${el.className} ${JSON.stringify([r.left, r.top, r.right, r.bottom])}`);
+      if (el.scrollWidth > el.clientWidth + 1) out.push(`內容溢出：${el.className}`);
+      if (el.matches('.segment, .btn') && (r.width < 44 || r.height < 44)) out.push(`太小：${el.textContent} ${r.width}×${r.height}`);
+    }
+    const blocks = Array.from(document.querySelectorAll<HTMLElement>('.title, .switchers > *, .stats, .toolbar'));
+    blocks.forEach((a, i) =>
+      blocks.slice(i + 1).forEach((b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        if (ra.left < rb.right && rb.left < ra.right && ra.top < rb.bottom && rb.top < ra.bottom) out.push(`重疊：${a.className} / ${b.className}`);
+      }),
+    );
+    const giveUp = document.querySelector<HTMLElement>('[data-testid="btn-giveup"]');
+    if (giveUp) {
+      const r = giveUp.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!giveUp.contains(hit)) out.push('「放棄」被擋住或在畫面外');
+    }
+    return out;
+  });
+  expect(problems).toEqual([]);
+}
+
+// 各種視窗大小（包含以前桌機版和直式版之間的缺口，例如 600×541、700×600）：遊戲中元件都不能超出畫面
+test.describe('版面不超出視窗', () => {
+  const sizes = [
+    { width: 320, height: 480 },
+    { width: 390, height: 844 },
+    { width: 600, height: 541 },
+    { width: 700, height: 600 },
+    { width: 720, height: 900 },
+    { width: 760, height: 600 },
+    { width: 768, height: 1024 },
+    { width: 568, height: 320 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 540 },
+    { width: 1440, height: 900 },
+  ];
+  for (const vp of sizes) {
+    test(`${vp.width}×${vp.height}：待機、遊戲中、放棄確認中`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      await openApp(page);
+      await page.evaluate(() => document.fonts.ready);
+      await expectLayoutFits(page);
+      await startGame(page);
+      await userMove(page, R);
+      await expectLayoutFits(page);
+      await page.getByTestId('btn-giveup').click();
+      await expect(page.getByTestId('btn-giveup')).toHaveText('Kociemba');
+      await expectLayoutFits(page);
+    });
+  }
+});
+
 // 視覺檢查用的截圖：UI_SCREENSHOTS=1 PORT=5182 npx playwright test e2e/ui.spec.ts --project=desktop -g 截圖
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },

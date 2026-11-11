@@ -16,7 +16,10 @@ interface CubieDebug {
     enqueueMoves(moves: Move[], options: { durationMs: number }): Promise<void>;
   };
   store: { getState(): { scrambleMoves: Move[]; history: Move[] } };
-  controller: { handleUserMove(move: Move): void };
+  controller: {
+    handleUserMove(move: Move): void;
+    setSolutionProvider(provider: ((state: unknown) => Promise<Move[]> | null) | null): void;
+  };
 }
 
 const VIEWPORTS = {
@@ -204,6 +207,55 @@ for (const viewport of [
     await expectNoOverflow(page);
     await shoot(page, `neon-portrait-${viewport.width}x${viewport.height}`);
   });
+}
+
+// 以前桌機版和直式版之間的缺口（寬度不到 760、高度又大於 540）：遊戲中、放棄確認中都不能超出畫面
+for (const viewport of [
+  { width: 600, height: 541 },
+  { width: 700, height: 600 },
+  { width: 760, height: 600 },
+  { width: 720, height: 900 },
+]) {
+  test(`中間尺寸 ${viewport.width}×${viewport.height} 不溢出`, async ({ page }, testInfo) => {
+    onlyProject(testInfo, 'desktop');
+    await page.setViewportSize(viewport);
+    await page.goto('./?testKeys');
+    await page.waitForFunction(() => Boolean((window as unknown as { __cubie?: { engine?: unknown } }).__cubie?.engine));
+    await page.evaluate(() => document.fonts.ready);
+    await expectNoOverflow(page);
+    await startGame(page);
+    await playMoves(page, [R]);
+    await settle(page);
+    await expectNoOverflow(page);
+    await expect(page.getByTestId('btn-giveup')).toBeVisible();
+    await shoot(page, `classic-${viewport.width}x${viewport.height}`);
+    await armGiveUp(page);
+    await expectNoOverflow(page);
+    await shoot(page, `giveup-armed-classic-${viewport.width}x${viewport.height}`);
+  });
+}
+
+// 放棄後等 Kociemba 算解：按鈕顯示「Kociemba 思考中…」、時間停住（用一個不會回應的解法器卡在這個狀態）
+for (const theme of ['classic', 'neon']) {
+  for (const viewport of ['desktop', 'portrait', 'landscape', 'narrow'] as const) {
+    test(`${theme} Kociemba 思考中（${viewport}）`, async ({ page }, testInfo) => {
+      onlyProject(testInfo, 'desktop');
+      await openGame(page, viewport);
+      await setTheme(page, theme);
+      await page.evaluate(() =>
+        (window as unknown as { __cubie: CubieDebug }).__cubie.controller.setSolutionProvider(() => new Promise<Move[]>(() => {})),
+      );
+      await startGame(page);
+      await playMoves(page, [R]);
+      await page.waitForTimeout(1200);
+      await settle(page);
+      await armGiveUp(page);
+      await page.getByTestId('btn-giveup').click();
+      await expect(page.getByTestId('btn-giveup')).toHaveText('Kociemba 思考中…');
+      await expectNoOverflow(page);
+      await shoot(page, `giveup-thinking-${theme}-${viewport}`);
+    });
+  }
 }
 
 for (const size of [2, 4]) {
