@@ -18,7 +18,7 @@
 - Vite、React、TypeScript
 - Three.js：3D 渲染、轉層動畫、光暈後製
 - Zustand：遊戲狀態
-- [cubejs](https://github.com/ldez/cubejs)：3×3 Kociemba 解法器，在 Web Worker 裡建表和求解，不會卡住畫面
+- [cubejs](https://github.com/ldez/cubejs)（MIT）：3×3 Kociemba 解法器，在 Web Worker 裡建表和求解，不會卡住畫面。程式碼放在 `src/vendor/cubejs/`，沒有從 npm 安裝，原因見該資料夾的 `index.ts`
 - Vitest、Playwright：單元測試和端對端測試（桌機 Chromium、iPhone WebKit）
 
 程式分成三層，彼此只透過介面溝通：

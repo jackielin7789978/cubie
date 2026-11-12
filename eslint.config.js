@@ -9,7 +9,7 @@ const banImports = (names) => ({
 })
 
 export default tseslint.config(
-  { ignores: ['dist', 'previews', 'node_modules', 'playwright-report', 'test-results', '.claude'] },
+  { ignores: ['dist', 'src/vendor', 'previews', 'node_modules', 'playwright-report', 'test-results', '.claude'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

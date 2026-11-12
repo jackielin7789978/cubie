@@ -1,4 +1,4 @@
-import Cube from 'cubejs';
+import Cube from '../vendor/cubejs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyMoves, createSolvedState, isSolved } from '../core/cubeState';
 import { toFaceletString } from '../core/facelets';
