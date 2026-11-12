@@ -74,16 +74,19 @@ export function createKociembaClient(createWorker: () => WorkerLike = createDefa
   let ready = false;
 
   const init = (): Promise<void> => {
-    initPromise ??= channel.request({ type: 'init' }).then(
+    if (initPromise) return initPromise;
+    const current: Promise<void> = channel.request({ type: 'init' }).then(
       () => {
         ready = true;
       },
       (error: unknown) => {
-        initPromise = null; // 失敗了下次可以重試
+        // 失敗了下次可以重試；dispose 後已經換成新的 init 就不要動它
+        if (initPromise === current) initPromise = null;
         throw error;
       },
     );
-    return initPromise;
+    initPromise = current;
+    return current;
   };
 
   const solveFacelets = async (facelets: string): Promise<string> => {
