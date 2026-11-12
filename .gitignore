@@ -18,5 +18,14 @@ blob-report/
 # subagent 的 git worktree
 .claude/worktrees/
 
-# reviewer 審查時另外截的圖（量大，不進版控）
-screenshots/review/
+
+# 測試產生的截圖（跑測試會重新產生）
+screenshots/
+
+# 個人開發用設定與過程文件，不公開
+.claude/
+CLAUDE.md
+SPEC.md
+DECISIONS.md
+PROGRESS.md
+previews/

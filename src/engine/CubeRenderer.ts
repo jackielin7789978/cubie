@@ -42,7 +42,7 @@ export class CubeRenderer {
     size: number,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    this.renderer.toneMapping = THREE.NoToneMapping; // ACES 會把貼紙顏色洗灰（DECISIONS.md）
+    this.renderer.toneMapping = THREE.NoToneMapping; // ACES 會把貼紙顏色洗灰，貼紙要忠實呈現主題色
     this.renderer.setPixelRatio(this.currentPixelRatio());
     this.styleCanvas(this.renderer.domElement);
     container.appendChild(this.renderer.domElement);

@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { FACES, FACE_NORMALS, createSolvedState, layerCoords } from '../core';
 import type { Axis, CubeState, FaceColor, Sticker, Vec3 } from '../core/types';
 
-// 尺寸照第 0 階段預覽（previews/phase0/cube.js）
+// 尺寸照設計階段確認過的預覽
 const BODY_SIZE = 0.98;
 const BODY_RADIUS = 0.09;
 const STICKER_SIZE = 0.84;
